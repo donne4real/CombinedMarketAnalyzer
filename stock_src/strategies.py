@@ -900,10 +900,262 @@ class InvestmentStrategies:
 
         return min(max(score, 0), 10), "; ".join(reasons[:4])
 
+    @staticmethod
+    def score_rule_of_40(data: dict) -> tuple[int, str]:
+        """
+        Rule of 40 (SaaS & High Growth Tech)
+        Evaluates fast-growing companies using Revenue Growth + FCF Margin.
+        Target: >= 40% (0.40)
+        """
+        score = 0
+        reasons = []
+
+        rev_growth = data.get("revenue_growth")
+        fcf = data.get("free_cash_flow")
+        market_cap = data.get("market_cap")
+        ps_ratio = data.get("ps_ratio")
+        
+        fcf_margin = 0
+        if fcf and market_cap and market_cap > 0 and ps_ratio and ps_ratio > 0:
+            revenue = market_cap / ps_ratio
+            fcf_margin = fcf / revenue
+        else:
+            fcf_margin = data.get("operating_margin") or data.get("profit_margin") or 0
+
+        if rev_growth is not None:
+            rule_40_val = rev_growth + fcf_margin
+            if rule_40_val >= 0.80:
+                score += 10
+                reasons.append(f"Elite Rule of 40 ({rule_40_val:.1%})")
+            elif rule_40_val >= 0.60:
+                score += 8
+                reasons.append(f"Excellent Rule of 40 ({rule_40_val:.1%})")
+            elif rule_40_val >= 0.40:
+                score += 6
+                reasons.append(f"Passes Rule of 40 ({rule_40_val:.1%})")
+            elif rule_40_val >= 0.20:
+                score += 3
+                reasons.append(f"Below Rule of 40 ({rule_40_val:.1%})")
+            elif rule_40_val > 0:
+                score += 1
+                reasons.append(f"Poor Rule of 40 ({rule_40_val:.1%})")
+            elif rule_40_val <= 0:
+                reasons.append(f"Negative Rule of 40 ({rule_40_val:.1%})")
+
+            if rev_growth > 0.30:
+                score += 2
+                reasons.append("Hyper-growth")
+                
+        return min(max(score, 0), 10), "; ".join(reasons[:4])
+
+    @staticmethod
+    def score_buffett_moat(data: dict) -> tuple[int, str]:
+        """
+        Warren Buffett "Economic Moat" Model
+        Targets high ROE/ROIC, solid gross margins, and consistent profitability.
+        """
+        score = 0
+        reasons = []
+
+        roe = data.get("roe")
+        roic = data.get("roic")
+        gross_margin = data.get("gross_margin")
+        debt_to_equity = data.get("debt_to_equity")
+        eps = data.get("eps")
+
+        if roic and roic > 0:
+            if roic >= 0.20:
+                score += 3
+                reasons.append(f"Elite ROIC ({roic:.1%})")
+            elif roic >= 0.15:
+                score += 2
+                reasons.append(f"Strong ROIC ({roic:.1%})")
+            elif roic > 0.10:
+                score += 1
+        elif roe and roe > 0:
+            if roe >= 0.20:
+                score += 2
+                reasons.append(f"Strong ROE ({roe:.1%})")
+            elif roe >= 0.15:
+                score += 1
+                
+        if gross_margin and gross_margin > 0:
+            if gross_margin >= 0.40:
+                score += 3
+                reasons.append(f"High Gross Margin ({gross_margin:.1%})")
+            elif gross_margin >= 0.30:
+                score += 1
+                reasons.append(f"Solid Gross Margin ({gross_margin:.1%})")
+                
+        if debt_to_equity is not None and debt_to_equity >= 0:
+            if debt_to_equity < 0.50:
+                score += 2
+                reasons.append("Low Debt")
+            elif debt_to_equity < 0.80:
+                score += 1
+            elif debt_to_equity > 1.5:
+                score -= 1
+                
+        if eps and eps > 0:
+            score += 2
+            reasons.append("Profitable")
+        elif eps and eps <= 0:
+            score -= 2
+            reasons.append("Unprofitable")
+
+        return min(max(score, 0), 10), "; ".join(reasons[:4])
+
+    @staticmethod
+    def score_can_slim(data: dict) -> tuple[int, str]:
+        """
+        CAN SLIM (William O'Neil)
+        Blends fundamental acceleration with technical momentum.
+        """
+        score = 0
+        reasons = []
+
+        earn_growth = data.get("earnings_growth")
+        rev_growth = data.get("revenue_growth")
+        price = data.get("price")
+        high_52 = data.get("52_week_high")
+        low_52 = data.get("52_week_low")
+        shares = data.get("shares_outstanding")
+        inst_own = data.get("institutional_ownership")
+
+        if earn_growth and earn_growth > 0:
+            if earn_growth > 0.25:
+                score += 3
+                reasons.append(f"Earnings +{earn_growth:.1%}")
+            elif earn_growth > 0.15:
+                score += 2
+        if rev_growth and rev_growth > 0.20:
+            score += 1
+            reasons.append(f"Sales +{rev_growth:.1%}")
+
+        if price and high_52 and low_52 and high_52 != low_52:
+            position = (price - low_52) / (high_52 - low_52)
+            if position > 0.90:
+                score += 3
+                reasons.append("Near 52W High")
+            elif position > 0.80:
+                score += 1
+            elif position < 0.50:
+                score -= 1
+                
+        if shares and shares < 50_000_000:
+            score += 1
+            reasons.append("Low supply")
+            
+        if inst_own and inst_own > 0:
+            if 0.30 <= inst_own <= 0.80:
+                score += 2
+                reasons.append(f"Healthy inst. backing ({inst_own:.1%})")
+            elif inst_own > 0.90:
+                reasons.append(f"Over-owned ({inst_own:.1%})")
+
+        return min(max(score, 0), 10), "; ".join(reasons[:4])
+
+    @staticmethod
+    def score_peter_lynch_garp(data: dict) -> tuple[int, str]:
+        """
+        Peter Lynch Fair Value (GARP)
+        Focuses on Growth at a Reasonable Price using the PEG ratio.
+        """
+        score = 0
+        reasons = []
+
+        peg_ratio = data.get("peg_ratio")
+        debt_to_equity = data.get("debt_to_equity")
+        inst_own = data.get("institutional_ownership")
+        market_cap = data.get("market_cap")
+
+        if peg_ratio and peg_ratio > 0:
+            if peg_ratio <= 0.5:
+                score += 5
+                reasons.append(f"Incredible PEG ({peg_ratio:.2f})")
+            elif peg_ratio <= 1.0:
+                score += 4
+                reasons.append(f"Great PEG ({peg_ratio:.2f})")
+            elif peg_ratio <= 1.5:
+                score += 2
+                reasons.append(f"Fair PEG ({peg_ratio:.2f})")
+            elif peg_ratio > 2.0:
+                score -= 1
+                reasons.append(f"Poor PEG ({peg_ratio:.2f})")
+        else:
+            reasons.append("No PEG")
+
+        if debt_to_equity is not None and debt_to_equity >= 0:
+            if debt_to_equity < 0.40:
+                score += 2
+                reasons.append("Low debt")
+            elif debt_to_equity < 0.80:
+                score += 1
+                
+        if inst_own is not None and inst_own > 0:
+            if inst_own < 0.40:
+                score += 2
+                reasons.append(f"Under radar ({inst_own:.1%})")
+            elif inst_own < 0.60:
+                score += 1
+                
+        if market_cap and market_cap > 0:
+            if market_cap < 5_000_000_000:
+                score += 1
+                reasons.append("Small/Mid Cap")
+
+        return min(max(score, 0), 10), "; ".join(reasons[:4])
+
+    @staticmethod
+    def score_beneish_m_score(data: dict) -> tuple[int, str]:
+        """
+        Beneish M-Score (Fraud Detection proxy)
+        Higher score = less likely to be manipulating earnings.
+        """
+        score = 0
+        reasons = []
+
+        fcf = data.get("free_cash_flow")
+        eps = data.get("eps")
+        shares = data.get("shares_outstanding")
+        profit_margin = data.get("profit_margin")
+        gross_margin = data.get("gross_margin")
+        debt_to_equity = data.get("debt_to_equity")
+        
+        if fcf and eps and shares:
+            net_income_proxy = eps * shares
+            if fcf > net_income_proxy * 1.10:
+                score += 4
+                reasons.append("Strong Cash-to-Earnings")
+            elif fcf > net_income_proxy * 0.80:
+                score += 2
+                reasons.append("Cash matches earnings")
+            elif fcf < 0 and net_income_proxy > 0:
+                score -= 3
+                reasons.append("Profits not backed by cash")
+                
+        if gross_margin and profit_margin:
+            if gross_margin > 0 and profit_margin > 0:
+                score += 3
+                reasons.append("Healthy margins")
+            elif gross_margin < 0 or profit_margin < 0:
+                score -= 1
+                reasons.append("Negative margins")
+                
+        if debt_to_equity is not None:
+            if debt_to_equity < 1.0:
+                score += 3
+                reasons.append("Conservative leverage")
+            elif debt_to_equity > 2.0:
+                score -= 1
+                reasons.append("High leverage")
+                
+        return min(max(score + 2, 0), 10), "; ".join(reasons[:4])
+
     @classmethod
     def analyze_stock(cls, data: dict) -> dict:
         """
-        Run all 10 strategies on a stock and return scores.
+        Run all 15 strategies on a stock and return scores.
         """
         strategies = [
             ("benjamin_graham", cls.score_benjamin_graham),
@@ -916,6 +1168,11 @@ class InvestmentStrategies:
             ("quality_model", cls.score_quality_model),
             ("fama_french", cls.score_fama_french),
             ("mean_reversion", cls.score_mean_reversion),
+            ("rule_of_40", cls.score_rule_of_40),
+            ("buffett_moat", cls.score_buffett_moat),
+            ("can_slim", cls.score_can_slim),
+            ("peter_lynch_garp", cls.score_peter_lynch_garp),
+            ("beneish_m_score", cls.score_beneish_m_score),
         ]
 
         results = {}
@@ -927,7 +1184,7 @@ class InvestmentStrategies:
             total_score += score
 
         results["total_score"] = total_score
-        results["average_score"] = round(total_score / 10, 2)
+        results["average_score"] = round(total_score / 15, 2)
 
         return results
 
@@ -944,4 +1201,9 @@ STRATEGY_NAMES = {
     "quality_model": "Quality Model",
     "fama_french": "Fama-French 3-Factor",
     "mean_reversion": "Mean Reversion",
+    "rule_of_40": "Rule of 40 (SaaS/Tech)",
+    "buffett_moat": "Buffett Economic Moat",
+    "can_slim": "CAN SLIM",
+    "peter_lynch_garp": "Peter Lynch Fair Value",
+    "beneish_m_score": "Beneish M-Score",
 }
