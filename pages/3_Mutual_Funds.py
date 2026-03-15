@@ -498,9 +498,23 @@ def render_backtesting_page():
 
         custom_tickers = ""
         if fund_universe == "Custom Tickers":
+            uploaded_file = st.file_uploader("Upload CSV/TXT of Tickers", type=["csv", "txt"], help="Upload a file with one ticker per line, or comma-separated.")
+            if uploaded_file is not None:
+                try:
+                    df = pd.read_csv(uploaded_file, header=None)
+                    # Flatten in case of multiple columns, but usually it's just one
+                    file_tickers = []
+                    for col in df.columns:
+                        file_tickers.extend(df[col].dropna().astype(str).tolist())
+                    custom_tickers = ",".join(file_tickers)
+                    st.success(f"Loaded {len(file_tickers)} tickers from file!")
+                except Exception as e:
+                    st.error(f"Error reading file: {e}")
+                    
             custom_tickers = st.text_area(
-                "Enter tickers (comma-separated)",
-                placeholder="VFIAX, VTSAX, VBTLX, VTIAX",
+                "Or manually enter/edit tickers (comma-separated)",
+                value=custom_tickers,
+                placeholder="AAPL, MSFT, GOOGL, TSLA",
                 height=100
             )
 

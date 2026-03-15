@@ -25,7 +25,7 @@ from typing import Optional
 
 import pandas as pd
 import yfinance as yf
-from shared_src.base_fetcher import BaseDataFetcher, safe_get_numeric, RATE_LIMIT_DELAY
+from shared_src.base_fetcher import BaseDataFetcher, safe_get_numeric
 
 
 
@@ -92,8 +92,8 @@ class StockDataFetcher(BaseDataFetcher):
 
         # Fetch from Yahoo Finance with rate limiting
         try:
-            time.sleep(RATE_LIMIT_DELAY)  # Rate limiting
-            stock = yf.Ticker(ticker)
+              # Rate limiting
+            stock = self.get_ticker_obj(ticker)
             info = stock.info
 
             # Skip if no valid data

@@ -1,15 +1,24 @@
 import json
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
 import yfinance as yf
+from requests import Session
+from requests_cache import CacheMixin, SQLiteCache
+from requests_ratelimiter import LimiterMixin
 
 # Global shared cache directory for the Combined Analyzer
 CACHE_BASE_DIR = Path.home() / ".qwen_combined_analyzer" / "cache"
-CACHE_EXPIRY_HOURS = 24  # Cache valid for 24 hours
-RATE_LIMIT_DELAY = 1.0  # Seconds between requests
+CACHE_EXPIRY_HOURS = 24  # Custom JSON cache valid for 24 hours
+
+class CachedLimiterSession(CacheMixin, LimiterMixin, Session):
+    """
+    A custom requests session that combines:
+    1. requests_cache for SQLite caching of HTTP responses
+    2. requests_ratelimiter for obeying Yahoo Finance API limits (2 requests per second)
+    """
+    pass
 
 class BaseDataFetcher:
     """
@@ -21,35 +30,40 @@ class BaseDataFetcher:
         """Initialize the fetcher and load existing cache from disk."""
         self.cache_file = CACHE_BASE_DIR / cache_filename
         self.cache: dict = {}
+        
+        # Setup Yahoo Finance custom session
+        CACHE_BASE_DIR.mkdir(parents=True, exist_ok=True)
+        sqlite_cache = SQLiteCache(str(CACHE_BASE_DIR / "yfinance_cache"))
+        
+        self.session = CachedLimiterSession(
+            per_second=2,
+            backend=sqlite_cache,
+            expire_after=timedelta(hours=24)
+        )
+        
         self._load_cache()
 
     def _load_cache(self):
-        """Load existing cache from disk on initialization."""
+        """Load existing JSON cache from disk on initialization."""
         try:
-            CACHE_BASE_DIR.mkdir(parents=True, exist_ok=True)
-        except (OSError, PermissionError) as e:
-            print(f"Warning: Could not create cache directory: {e}")
-        
-        if self.cache_file.exists():
-            try:
+            if self.cache_file.exists():
                 with open(self.cache_file, "r", encoding="utf-8") as f:
                     self.cache = json.load(f)
                 print(f"Loaded cache with {len(self.cache)} items from {self.cache_file.name}")
-            except (json.JSONDecodeError, IOError, PermissionError) as e:
-                print(f"Warning: Could not load cache: {e}")
-                self.cache = {}
+        except (json.JSONDecodeError, IOError, PermissionError) as e:
+            print(f"Warning: Could not load cache: {e}")
+            self.cache = {}
 
     def _save_cache(self):
-        """Save current cache to disk in JSON format."""
+        """Save current JSON cache to disk."""
         try:
-            CACHE_BASE_DIR.mkdir(parents=True, exist_ok=True)
             with open(self.cache_file, "w", encoding="utf-8") as f:
                 json.dump(self.cache, f, indent=2, default=str)
         except (OSError, IOError, PermissionError, TypeError) as e:
             print(f"Warning: Could not save cache: {e}")
 
     def _is_cache_valid(self, ticker: str) -> bool:
-        """Check if cached data for a ticker is still valid (not expired)."""
+        """Check if cached JSON data for a ticker is still valid (not expired)."""
         if ticker not in self.cache:
             return False
         cached_time = self.cache[ticker].get("timestamp", "")
@@ -62,30 +76,34 @@ class BaseDataFetcher:
             return False
 
     def _get_cached_data(self, ticker: str) -> Optional[dict]:
-        """Retrieve valid cached data for a ticker."""
+        """Retrieve valid cached JSON data for a ticker."""
         if self._is_cache_valid(ticker):
             return self.cache[ticker].get("data")
         return None
 
     def _cache_data(self, ticker: str, data: dict):
-        """Store data in cache with current timestamp."""
+        """Store JSON data in cache with current timestamp."""
         self.cache[ticker] = {
             "timestamp": datetime.now().isoformat(),
             "data": data
         }
         self._save_cache()
 
+    def get_ticker_obj(self, ticker_symbol: str) -> yf.Ticker:
+        """Returns a yfinance Ticker object injected with our custom cached+limited session."""
+        return yf.Ticker(ticker_symbol, session=self.session)
+
     def fetch_data(self, ticker: str) -> Optional[dict]:
         """
         To be implemented by subclasses.
-        Should handle fetching from yfinance and returning the formatted data dict.
+        Should handle fetching from yfinance using self.get_ticker_obj() and returning formatted data.
         """
         raise NotImplementedError("Subclasses must implement fetch_data")
 
     def fetch_multiple(self, tickers: list, batch_size: int = 50, item_name: str = "items") -> list:
         """
         Fetch data for multiple tickers with batching and progress tracking.
-        Automatically applies rate limiting between requests.
+        Due to the CachedLimiterSession, rate limiting is handled automatically under the hood.
         """
         results = []
         total = len(tickers)
@@ -104,10 +122,16 @@ class BaseDataFetcher:
         return results
 
     def clear_cache(self):
-        """Clear all cached data from memory and disk."""
+        """Clear all cached data from memory and disk, including SQLite HTTP cache."""
         self.cache = {}
         if self.cache_file.exists():
             self.cache_file.unlink()
+            
+        try:
+            self.session.cache.clear()
+        except AttributeError:
+            pass
+            
         print("Cache cleared")
 
 def safe_get_numeric(data, key, default=None):

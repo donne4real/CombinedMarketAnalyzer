@@ -25,7 +25,7 @@ from typing import Optional
 
 import pandas as pd
 import yfinance as yf
-from shared_src.base_fetcher import BaseDataFetcher, safe_get_numeric, RATE_LIMIT_DELAY
+from shared_src.base_fetcher import BaseDataFetcher, safe_get_numeric
 
 
 
@@ -63,8 +63,7 @@ class StockDataFetcher(BaseDataFetcher):
             return cached
 
         try:
-            time.sleep(RATE_LIMIT_DELAY)
-            stock = yf.Ticker(ticker)
+            stock = self.get_ticker_obj(ticker)
             info = stock.info
 
             if not info or not info.get("symbol"):
