@@ -8,11 +8,18 @@ Features:
 """
 
 import os
+import sys
 from datetime import datetime, timedelta
+
+# Ensure the root project directory is in the Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pandas as pd
 import streamlit as st
 
+from shared_src.base_fetcher import RATE_LIMIT_DELAY
+from shared_src.visuals import create_speedometer, create_radar_chart
+from shared_src.ai_summary import generate_stock_summary
 from mf_src.data_fetcher import MutualFundDataFetcher, get_fund_categories, get_all_fund_tickers
 from mf_src.strategies import MutualFundStrategies, STRATEGY_NAMES
 from mf_src.exporter import SpreadsheetExporter
@@ -253,7 +260,17 @@ def render_analysis_results():
     st.dataframe(
         top_10[["Ticker", "Name", "Family", "Category", "NAV", "Expense Ratio", "Total", "Average"]],
         use_container_width=True,
-        hide_index=True
+        hide_index=True,
+        column_config={
+            "Ticker": st.column_config.TextColumn("Ticker", help="The fund's trading symbol."),
+            "Name": st.column_config.TextColumn("Name", help="The full name of the Mutual Fund."),
+            "Family": st.column_config.TextColumn("Family", help="The company that manages the mutual fund. Example: Vanguard, Fidelity."),
+            "Category": st.column_config.TextColumn("Category", help="The specific market sector or asset class this fund focuses on."),
+            "NAV": st.column_config.TextColumn("Net Asset Value", help="The per-share value of the fund. Similar to a stock's price."),
+            "Expense Ratio": st.column_config.TextColumn("Expense Ratio", help="The annual fee charged by the fund. Lower numbers eat less of your profit over time."),
+            "Total": st.column_config.NumberColumn("Total Score", help="The sum of all strategy scores. Higher means better historical and structural quality."),
+            "Average": st.column_config.NumberColumn("Average Score", help="The average score across all tested analysis methodologies.")
+        }
     )
 
     # Strategy score distribution
@@ -384,24 +401,58 @@ def render_analysis_results():
                     st.markdown(f"**Morningstar:** {stars}")
 
             with col2:
-                st.metric("Total Score", strategies.get("total_score", 0))
-                st.metric("Average Score", f"{strategies.get('average_score', 0):.2f}")
+                total_score = strategies.get("total_score", 0)
+                st.metric("Total Score", f"{total_score}/100")
+                st.metric("Average Score", f"{strategies.get('average_score', 0):.2f}/10")
 
-            # Strategy breakdown
-            st.markdown("**Strategy Scores:**")
-            for strategy_key, strategy_name in STRATEGY_NAMES.items():
-                result = strategies.get(strategy_key, {})
-                score = result.get("score", 0)
-                reason = result.get("reason", "")
+            # --- AI Summary ---
+            with st.spinner("🤖 Generating AI Insight..."):
+                summary = generate_stock_summary(
+                    fund.get("name", ""), 
+                    fund.get("symbol", ""), 
+                    "Mutual Fund", 
+                    strategies
+                )
+                st.info(f"**AI Insight:** {summary}", icon="🤖")
 
-                if score >= 8:
-                    score_emoji = "🟢"
-                elif score >= 5:
-                    score_emoji = "🟡"
-                else:
-                    score_emoji = "🔴"
+            # --- Visualizations ---
+            st.markdown("---")
+            viz_col1, viz_col2 = st.columns(2)
+            
+            with viz_col1:
+                st.markdown("#### Overall Rating")
+                speedometer = create_speedometer(total_score, max_score=100, title="Investment Grade")
+                st.plotly_chart(speedometer, use_container_width=True)
+                
+            with viz_col2:
+                st.markdown("#### Fundamental Balance")
+                # Group Mutual Fund specific strategies into 5 dimensions
+                spider_categories = {
+                    "Performance": ["momentum", "growth", "risk_adjusted"],
+                    "Manager Skill": ["manager_tenure", "morningstar_rating"],
+                    "Value & Cost": ["value", "cost_efficiency"],
+                    "Structure": ["turnover_efficiency", "liquidity"],
+                    "ESG": ["esg"]
+                }
+                radar_chart = create_radar_chart(strategies, spider_categories, title="")
+                st.plotly_chart(radar_chart, use_container_width=True)
 
-                st.markdown(f"{score_emoji} **{strategy_name}**: {score}/10 - {reason}")
+            # --- Detailed Breakdown ---
+            with st.expander("🔍 View Detailed Strategy Breakdown", expanded=False):
+                for strategy_key, strategy_name in STRATEGY_NAMES.items():
+                    result = strategies.get(strategy_key, {})
+                    score = result.get("score", 0)
+                    reason = result.get("reason", "")
+    
+                    score_emoji = ""
+                    if score >= 8:
+                        score_emoji = "🟢"
+                    elif score >= 5:
+                        score_emoji = "🟡"
+                    else:
+                        score_emoji = "🔴"
+    
+                    st.markdown(f"{score_emoji} **{strategy_name}**: {score}/10 - {reason}")
 
 
 def render_backtesting_page():

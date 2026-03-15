@@ -8,11 +8,18 @@ Features:
 """
 
 import os
+import sys
 from datetime import datetime, timedelta
+
+# Ensure the root project directory is in the Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pandas as pd
 import streamlit as st
 
+from shared_src.base_fetcher import RATE_LIMIT_DELAY
+from shared_src.visuals import create_speedometer, create_radar_chart
+from shared_src.ai_summary import generate_stock_summary
 from etf_src.data_fetcher import ETFDataFetcher, get_etf_categories, get_all_etf_tickers
 from etf_src.strategies import ETFStrategies, STRATEGY_NAMES
 from etf_src.exporter import SpreadsheetExporter
@@ -252,7 +259,16 @@ def render_analysis_results():
     st.dataframe(
         top_10[["Ticker", "Name", "Category", "Price", "Expense Ratio", "Total", "Average"]],
         use_container_width=True,
-        hide_index=True
+        hide_index=True,
+        column_config={
+            "Ticker": st.column_config.TextColumn("Ticker", help="The fund's trading symbol."),
+            "Name": st.column_config.TextColumn("Name", help="The full name of the Exchange Traded Fund."),
+            "Category": st.column_config.TextColumn("Category", help="The specific market sector or asset class this ETF tracks."),
+            "Price": st.column_config.TextColumn("Price", help="The current trading price per share."),
+            "Expense Ratio": st.column_config.TextColumn("Expense Ratio", help="The annual fee charged by the fund. Lower is better. 0.10% means you pay $10 per $10,000 invested."),
+            "Total": st.column_config.NumberColumn("Total Score", help="The sum of all strategy scores. Higher means better historical and structural quality."),
+            "Average": st.column_config.NumberColumn("Average Score", help="The average score across all tested methodologies.")
+        }
     )
 
     # Strategy score distribution
@@ -363,24 +379,58 @@ def render_analysis_results():
                 st.markdown(f"**Holdings:** {etf.get('holdings_count', 'N/A')}")
 
             with col2:
-                st.metric("Total Score", strategies.get("total_score", 0))
-                st.metric("Average Score", f"{strategies.get('average_score', 0):.2f}")
+                total_score = strategies.get("total_score", 0)
+                st.metric("Total Score", f"{total_score}/100")
+                st.metric("Average Score", f"{strategies.get('average_score', 0):.2f}/10")
 
-            # Strategy breakdown
-            st.markdown("**Strategy Scores:**")
-            for strategy_key, strategy_name in STRATEGY_NAMES.items():
-                result = strategies.get(strategy_key, {})
-                score = result.get("score", 0)
-                reason = result.get("reason", "")
+            # --- AI Summary ---
+            with st.spinner("🤖 Generating AI Insight..."):
+                summary = generate_stock_summary(
+                    etf.get("name", ""), 
+                    etf.get("symbol", ""), 
+                    "ETF", 
+                    strategies
+                )
+                st.info(f"**AI Insight:** {summary}", icon="🤖")
 
-                if score >= 8:
-                    score_emoji = "🟢"
-                elif score >= 5:
-                    score_emoji = "🟡"
-                else:
-                    score_emoji = "🔴"
+            # --- Visualizations ---
+            st.markdown("---")
+            viz_col1, viz_col2 = st.columns(2)
+            
+            with viz_col1:
+                st.markdown("#### Overall Rating")
+                speedometer = create_speedometer(total_score, max_score=100, title="Investment Grade")
+                st.plotly_chart(speedometer, use_container_width=True)
+                
+            with viz_col2:
+                st.markdown("#### Fundamental Balance")
+                # Group ETF specific strategies into 5 dimensions
+                spider_categories = {
+                    "Performance": ["momentum", "growth", "risk_adjusted"],
+                    "Quality & Fundamentals": ["quality", "dividend"],
+                    "Value & Cost": ["value", "cost_efficiency"],
+                    "Structure": ["diversification", "liquidity"],
+                    "ESG": ["esg"]
+                }
+                radar_chart = create_radar_chart(strategies, spider_categories, title="")
+                st.plotly_chart(radar_chart, use_container_width=True)
 
-                st.markdown(f"{score_emoji} **{strategy_name}**: {score}/10 - {reason}")
+            # --- Detailed Breakdown ---
+            with st.expander("🔍 View Detailed Strategy Breakdown", expanded=False):
+                for strategy_key, strategy_name in STRATEGY_NAMES.items():
+                    result = strategies.get(strategy_key, {})
+                    score = result.get("score", 0)
+                    reason = result.get("reason", "")
+    
+                    score_emoji = ""
+                    if score >= 8:
+                        score_emoji = "🟢"
+                    elif score >= 5:
+                        score_emoji = "🟡"
+                    else:
+                        score_emoji = "🔴"
+    
+                    st.markdown(f"{score_emoji} **{strategy_name}**: {score}/10 - {reason}")
 
 
 def render_backtesting_page():

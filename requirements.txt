@@ -10,3 +10,5 @@ requests-ratelimiter>=0.4.2
 pyrate-limiter>=2.10.0
 streamlit>=1.28.0
 yfinance>=0.2.31
+plotly
+openai>=2.10.0

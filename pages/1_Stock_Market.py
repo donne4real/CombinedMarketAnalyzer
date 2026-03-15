@@ -8,11 +8,17 @@ Features:
 """
 
 import os
-from datetime import datetime, timedelta
+import sys
+
+# Ensure the root project directory is in the Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pandas as pd
 import streamlit as st
 
+from shared_src.base_fetcher import RATE_LIMIT_DELAY
+from shared_src.visuals import create_speedometer, create_radar_chart
+from shared_src.ai_summary import generate_stock_summary
 from stock_src.data_fetcher import StockDataFetcher, get_nasdaq_nyse_tickers, get_sp500_tickers
 from stock_src.strategies import InvestmentStrategies, STRATEGY_NAMES
 from stock_src.exporter import SpreadsheetExporter
@@ -402,7 +408,19 @@ def render_analysis_results():
         display_df["Market Cap"] = display_df["Market Cap"].apply(
             lambda x: f"${x/1e9:.2f}B" if x and x > 1e9 else f"${x/1e6:.0f}M" if x else "N/A"
         )
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        st.dataframe(
+            display_df, 
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "Ticker": st.column_config.TextColumn("Ticker", help="The stock symbol used on the exchange."),
+                "Company": st.column_config.TextColumn("Company", help="The full name of the corporation."),
+                "Sector": st.column_config.TextColumn("Sector", help="The segment of the economy the company operates within."),
+                "Market Cap": st.column_config.TextColumn("Market Cap", help="The total dollar value of all outstanding shares. A measure of the company's size."),
+                "Price": st.column_config.TextColumn("Price", help="The current trading price per share."),
+                "Total Score": st.column_config.NumberColumn("Total Score", help="The sum of all 15 strategy scores. Maximum possible is 150 points. Over 70 suggests strong potential.")
+            }
+        )
 
     # Individual stock analysis
     st.subheader("🔎 Individual Stock Analysis")
@@ -425,24 +443,58 @@ def render_analysis_results():
                 st.markdown(f"Industry: {stock.get('industry', 'N/A')}")
 
             with col2:
-                st.metric("Total Score", strategies.get("total_score", 0))
-                st.metric("Average Score", f"{strategies.get('average_score', 0):.2f}")
+                total_score = strategies.get("total_score", 0)
+                st.metric("Total Score", f"{total_score}/150")
+                st.metric("Average Score", f"{strategies.get('average_score', 0):.2f}/10")
 
-            # Strategy breakdown
-            st.markdown("**Strategy Scores:**")
-            for strategy_key, strategy_name in STRATEGY_NAMES.items():
-                result = strategies.get(strategy_key, {})
-                score = result.get("score", 0)
-                reason = result.get("reason", "")
+            # --- AI Summary ---
+            with st.spinner("🤖 Generating AI Insight..."):
+                summary = generate_stock_summary(
+                    stock.get("name", ""), 
+                    stock.get("symbol", ""), 
+                    "Stock", 
+                    strategies
+                )
+                st.info(f"**AI Insight:** {summary}", icon="🤖")
 
-                if score >= 8:
-                    score_emoji = "🟢"
-                elif score >= 5:
-                    score_emoji = "🟡"
-                else:
-                    score_emoji = "🔴"
+            # --- Visualizations ---
+            st.markdown("---")
+            viz_col1, viz_col2 = st.columns(2)
+            
+            with viz_col1:
+                st.markdown("#### Overall Rating")
+                speedometer = create_speedometer(total_score, max_score=150, title="Investment Grade")
+                st.plotly_chart(speedometer, use_container_width=True)
+                
+            with viz_col2:
+                st.markdown("#### Fundamental Balance")
+                # Group 15 strategies into 5 radar dimensions
+                spider_categories = {
+                    "Value": ["graham_value", "lynch_garp"],
+                    "Growth/Momentum": ["momentum", "growth", "rule_of_40", "can_slim"],
+                    "Quality/Moat": ["quality", "buffett_moat"],
+                    "Safety": ["altman_z", "piotroski_f", "beneish_m", "dividend"],
+                    "Other": ["risk_adjusted", "insider", "analyst"]
+                }
+                radar_chart = create_radar_chart(strategies, spider_categories, title="")
+                st.plotly_chart(radar_chart, use_container_width=True)
 
-                st.markdown(f"{score_emoji} **{strategy_name}**: {score}/10 - {reason}")
+            # --- Detailed Breakdown ---
+            with st.expander("🔍 View Detailed Strategy Breakdown", expanded=False):
+                for strategy_key, strategy_name in STRATEGY_NAMES.items():
+                    result = strategies.get(strategy_key, {})
+                    score = result.get("score", 0)
+                    reason = result.get("reason", "")
+                    
+                    score_emoji = ""
+                    if score >= 8:
+                        score_emoji = "🟢"
+                    elif score >= 5:
+                        score_emoji = "🟡"
+                    else:
+                        score_emoji = "🔴"
+
+                    st.markdown(f"{score_emoji} **{strategy_name}**: {score}/10 - {reason}")
 
 
 def render_backtesting_page():

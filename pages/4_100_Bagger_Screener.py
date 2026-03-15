@@ -13,11 +13,19 @@ Features:
 """
 
 import os
-from datetime import datetime
+import sys
+from datetime import datetime, timedelta
+from datetime import datetime, timedelta
+
+# Ensure the root project directory is in the Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pandas as pd
 import streamlit as st
 
+from shared_src.base_fetcher import RATE_LIMIT_DELAY
+from shared_src.visuals import create_speedometer, create_radar_chart
+from shared_src.ai_summary import generate_stock_summary
 from bagger_src.data_fetcher import (
     StockDataFetcher,
     get_small_cap_stocks,
@@ -370,14 +378,14 @@ def render_results():
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Ticker": "Ticker",
-            "Company": "Company",
-            "Sector": "Sector",
-            "Market Cap": "Market Cap",
-            "PEG": "PEG Ratio",
-            "Revenue Growth": "Revenue Growth",
-            "Total Score": "Total Score",
-            "Recommendation": "Recommendation"
+            "Ticker": st.column_config.TextColumn("Ticker", help="The stock symbol used on the exchange."),
+            "Company": st.column_config.TextColumn("Company", help="The full name of the corporation."),
+            "Sector": st.column_config.TextColumn("Sector", help="The segment of the economy the company operates within."),
+            "Market Cap": st.column_config.TextColumn("Market Cap", help="The total dollar value of all outstanding shares. A measure of the company's size."),
+            "PEG": st.column_config.TextColumn("PEG Ratio", help="Price/Earnings-to-Growth. Under 1.0 is considered classically undervalued. Indicates how much you are paying for future growth."),
+            "Revenue Growth": st.column_config.TextColumn("Revenue Growth", help="The year-over-year percentage increase in top-line sales. The fuel for future earnings."),
+            "Total Score": st.column_config.NumberColumn("Total Score", help="The sum of all 15 strategy scores. Maximum possible is 150 points. Over 70 suggests strong potential."),
+            "Recommendation": st.column_config.TextColumn("Recommendation", help="Automated investment thesis based on the Total Score.")
         }
     )
 
@@ -473,25 +481,59 @@ def render_results():
                 st.markdown(f"**Insider Ownership:** {stock.get('insider_ownership', 0):.1%}" if stock.get('insider_ownership') else "**Insider Ownership:** N/A")
 
             with col2:
-                st.metric("Total Score", strategies.get("total_score", 0))
-                st.metric("Average Score", f"{strategies.get('average_score', 0):.1f}")
-                st.metric("Recommendation", get_100bagger_recommendation(strategies.get("total_score", 0)))
+                total_score = strategies.get("total_score", 0)
+                st.metric("Total Score", f"{total_score}/150")
+                st.metric("Average Score", f"{strategies.get('average_score', 0):.1f}/10")
+                st.metric("Recommendation", get_100bagger_recommendation(total_score))
 
-            # Strategy breakdown
-            st.markdown("**Strategy Scores:**")
-            for strategy_key, strategy_name in STRATEGY_NAMES.items():
-                result = strategies.get(strategy_key, {})
-                score = result.get("score", 0)
-                reason = result.get("reason", "")
+            # --- AI Summary ---
+            with st.spinner("🤖 Generating AI Insight..."):
+                summary = generate_stock_summary(
+                    stock.get("name", ""), 
+                    stock.get("symbol", ""), 
+                    "Potential 100-Bagger Stock", 
+                    strategies
+                )
+                st.info(f"**AI Insight:** {summary}", icon="🤖")
 
-                if score >= 8:
-                    score_emoji = "🟢"
-                elif score >= 5:
-                    score_emoji = "🟡"
-                else:
-                    score_emoji = "🔴"
+            # --- Visualizations ---
+            st.markdown("---")
+            viz_col1, viz_col2 = st.columns(2)
+            
+            with viz_col1:
+                st.markdown("#### 100-Bagger Potential")
+                speedometer = create_speedometer(total_score, max_score=150, title="Multi-Bagger Grade")
+                st.plotly_chart(speedometer, use_container_width=True)
+                
+            with viz_col2:
+                st.markdown("#### Fundamental Balance")
+                # Group 100-Bagger specific strategies
+                spider_categories = {
+                    "Growth Engine": ["revenue_growth", "earnings_growth", "peg_ratio", "can_slim", "rule_of_40"],
+                    "Profitability & Moat": ["profit_margin", "roc", "quality", "buffett_moat"],
+                    "Financial Strength": ["debt_to_equity", "beneish_m", "altman_z", "piotroski_f"],
+                    "Valuation": ["market_cap", "graham_value", "lynch_garp"],
+                    "Management": ["insider_ownership"]
+                }
+                radar_chart = create_radar_chart(strategies, spider_categories, title="")
+                st.plotly_chart(radar_chart, use_container_width=True)
 
-                st.markdown(f"{score_emoji} **{strategy_name}**: {score}/10 - {reason}")
+            # --- Detailed Breakdown ---
+            with st.expander("🔍 View Detailed Strategy Breakdown", expanded=False):
+                for strategy_key, strategy_name in STRATEGY_NAMES.items():
+                    result = strategies.get(strategy_key, {})
+                    score = result.get("score", 0)
+                    reason = result.get("reason", "")
+    
+                    score_emoji = ""
+                    if score >= 8:
+                        score_emoji = "🟢"
+                    elif score >= 5:
+                        score_emoji = "🟡"
+                    else:
+                        score_emoji = "🔴"
+    
+                    st.markdown(f"{score_emoji} **{strategy_name}**: {score}/10 - {reason}")
 
 
 def main():
