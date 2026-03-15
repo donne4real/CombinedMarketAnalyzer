@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+.qwen_combined_analyzer/
+cache/
+.pytest_cache/
+.streamlit/
+*.xlsx
+*.csv
