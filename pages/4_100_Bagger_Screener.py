@@ -216,7 +216,7 @@ def render_main_page():
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.metric("Strategies", "10")
+        st.metric("Strategies", "15")
     with col2:
         st.metric("Focus", "100-Baggers")
     with col3:

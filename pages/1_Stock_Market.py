@@ -181,7 +181,7 @@ def render_stock_analysis_page():
         st.markdown("---")
         st.markdown("### About")
         st.markdown("""
-        **10 Investment Strategies:**
+        **15 Investment Strategies:**
         - Benjamin Graham (Value)
         - Magic Formula (Greenblatt)
         - Piotroski F-Score
@@ -192,6 +192,11 @@ def render_stock_analysis_page():
         - Quality Model
         - Fama-French 3-Factor
         - Mean Reversion
+        - Rule of 40 (SaaS/Tech)
+        - Buffett Economic Moat
+        - CAN SLIM
+        - Peter Lynch GARP
+        - Beneish M-Score
         """)
 
     # Main content area
