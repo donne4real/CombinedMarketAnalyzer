@@ -122,7 +122,9 @@ class MutualFundDataFetcher(BaseDataFetcher):
             return data
 
         except Exception as e:
+            import traceback
             print(f"  [ERROR] {ticker} - {str(e)}")
+            print(f"  [DEBUG] Full traceback: {traceback.format_exc()}")
             return None
 
 

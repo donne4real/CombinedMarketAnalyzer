@@ -1,4 +1,6 @@
 import json
+import os
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -9,7 +11,13 @@ from requests_cache import CacheMixin, SQLiteCache
 from requests_ratelimiter import LimiterMixin
 
 # Global shared cache directory for the Combined Analyzer
-CACHE_BASE_DIR = Path.home() / ".qwen_combined_analyzer" / "cache"
+# Use /tmp on Streamlit Cloud (read-only home dir), otherwise use home directory
+if os.environ.get("STREAMLIT_SERVER_HEADLESS"):
+    # Running on Streamlit Cloud - use temp directory
+    CACHE_BASE_DIR = Path(tempfile.gettempdir()) / "qwen_combined_analyzer" / "cache"
+else:
+    CACHE_BASE_DIR = Path.home() / ".qwen_combined_analyzer" / "cache"
+    
 CACHE_EXPIRY_HOURS = 24  # Custom JSON cache valid for 24 hours
 
 class CachedLimiterSession(CacheMixin, LimiterMixin, Session):
@@ -30,17 +38,21 @@ class BaseDataFetcher:
         """Initialize the fetcher and load existing cache from disk."""
         self.cache_file = CACHE_BASE_DIR / cache_filename
         self.cache: dict = {}
-        
+
         # Setup Yahoo Finance custom session
-        CACHE_BASE_DIR.mkdir(parents=True, exist_ok=True)
-        sqlite_cache = SQLiteCache(str(CACHE_BASE_DIR / "yfinance_cache"))
-        
+        try:
+            CACHE_BASE_DIR.mkdir(parents=True, exist_ok=True)
+            sqlite_cache = SQLiteCache(str(CACHE_BASE_DIR / "yfinance_cache"))
+        except (OSError, PermissionError) as e:
+            print(f"Warning: Could not create cache directory: {e}")
+            sqlite_cache = None
+
         self.session = CachedLimiterSession(
             per_second=2,
             backend=sqlite_cache,
             expire_after=timedelta(hours=24)
         )
-        
+
         self._load_cache()
 
     def _load_cache(self):

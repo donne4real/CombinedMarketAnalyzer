@@ -63,7 +63,7 @@ class ETFDataFetcher(BaseDataFetcher):
             info = etf.info
 
             if not info or not info.get("symbol"):
-                print(f"  [SKIP] {ticker} - No data available")
+                print(f"  [SKIP] {ticker} - No data available from Yahoo Finance")
                 return None
 
             data = {
@@ -115,7 +115,9 @@ class ETFDataFetcher(BaseDataFetcher):
             return data
 
         except Exception as e:
+            import traceback
             print(f"  [ERROR] {ticker} - {str(e)}")
+            print(f"  [DEBUG] Full traceback: {traceback.format_exc()}")
             return None
 
 
