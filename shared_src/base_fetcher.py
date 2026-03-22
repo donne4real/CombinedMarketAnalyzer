@@ -6,9 +6,6 @@ from pathlib import Path
 from typing import Optional
 
 import yfinance as yf
-from requests import Session
-from requests_cache import CacheMixin, SQLiteCache
-from requests_ratelimiter import LimiterMixin
 
 # Global shared cache directory for the Combined Analyzer
 # Use /tmp on Streamlit Cloud (read-only home dir), otherwise use home directory
@@ -20,18 +17,11 @@ else:
     
 CACHE_EXPIRY_HOURS = 24  # Custom JSON cache valid for 24 hours
 
-class CachedLimiterSession(CacheMixin, LimiterMixin, Session):
-    """
-    A custom requests session that combines:
-    1. requests_cache for SQLite caching of HTTP responses
-    2. requests_ratelimiter for obeying Yahoo Finance API limits (2 requests per second)
-    """
-    pass
-
 class BaseDataFetcher:
     """
-    Base class for fetching financial data with intelligent caching and rate limiting.
-    Provides global caching across all modules.
+    Base class for fetching financial data with intelligent caching.
+    Provides global caching across all modules using JSON-based caching.
+    Note: yfinance handles its own HTTP caching internally.
     """
 
     def __init__(self, cache_filename: str):
@@ -39,19 +29,11 @@ class BaseDataFetcher:
         self.cache_file = CACHE_BASE_DIR / cache_filename
         self.cache: dict = {}
 
-        # Setup Yahoo Finance custom session
+        # Setup cache directory
         try:
             CACHE_BASE_DIR.mkdir(parents=True, exist_ok=True)
-            sqlite_cache = SQLiteCache(str(CACHE_BASE_DIR / "yfinance_cache"))
         except (OSError, PermissionError) as e:
             print(f"Warning: Could not create cache directory: {e}")
-            sqlite_cache = None
-
-        self.session = CachedLimiterSession(
-            per_second=2,
-            backend=sqlite_cache,
-            expire_after=timedelta(hours=24)
-        )
 
         self._load_cache()
 
@@ -102,8 +84,8 @@ class BaseDataFetcher:
         self._save_cache()
 
     def get_ticker_obj(self, ticker_symbol: str) -> yf.Ticker:
-        """Returns a yfinance Ticker object injected with our custom cached+limited session."""
-        return yf.Ticker(ticker_symbol, session=self.session)
+        """Returns a yfinance Ticker object."""
+        return yf.Ticker(ticker_symbol)
 
     def fetch_data(self, ticker: str) -> Optional[dict]:
         """
@@ -115,7 +97,7 @@ class BaseDataFetcher:
     def fetch_multiple(self, tickers: list, batch_size: int = 50, item_name: str = "items") -> list:
         """
         Fetch data for multiple tickers with batching and progress tracking.
-        Due to the CachedLimiterSession, rate limiting is handled automatically under the hood.
+        yfinance handles rate limiting internally.
         """
         results = []
         total = len(tickers)
@@ -134,16 +116,10 @@ class BaseDataFetcher:
         return results
 
     def clear_cache(self):
-        """Clear all cached data from memory and disk, including SQLite HTTP cache."""
+        """Clear all cached data from memory and disk."""
         self.cache = {}
         if self.cache_file.exists():
             self.cache_file.unlink()
-            
-        try:
-            self.session.cache.clear()
-        except AttributeError:
-            pass
-            
         print("Cache cleared")
 
 def safe_get_numeric(data, key, default=None):
