@@ -15,7 +15,6 @@ Features:
 import os
 import sys
 from datetime import datetime, timedelta
-from datetime import datetime, timedelta
 
 # Ensure the root project directory is in the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -23,7 +22,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pandas as pd
 import streamlit as st
 
-from shared_src.base_fetcher import RATE_LIMIT_DELAY
 from shared_src.visuals import create_speedometer, create_radar_chart
 from shared_src.ai_summary import generate_stock_summary
 from bagger_src.data_fetcher import (

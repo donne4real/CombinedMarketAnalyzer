@@ -17,7 +17,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pandas as pd
 import streamlit as st
 
-from shared_src.base_fetcher import RATE_LIMIT_DELAY
 from shared_src.visuals import create_speedometer, create_radar_chart
 from shared_src.ai_summary import generate_stock_summary
 from mf_src.data_fetcher import MutualFundDataFetcher, get_fund_categories, get_all_fund_tickers
