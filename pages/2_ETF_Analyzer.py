@@ -198,11 +198,18 @@ def render_etf_analysis_page():
 
         # Fetch data
         st.markdown("### 📊 Fetching ETF Data...")
-        etfs_data = st.session_state.fetcher.fetch_multiple(tickers, batch_size=50)
+        with st.status("Fetching data from Yahoo Finance...", expanded=True) as status:
+            etf_data = st.session_state.fetcher.fetch_multiple(tickers, batch_size=50)
+            if etf_data:
+                status.update(label=f"✅ Successfully fetched {len(etf_data)} ETFs!", state="complete", expanded=False)
+            else:
+                status.update(label="❌ Failed to fetch any ETF data", state="error", expanded=True)
 
-        if not etfs_data:
-            st.error("No data fetched. Please try again or check your internet connection.")
+        if not etf_data:
+            st.error(f"No data fetched for the {len(tickers)} tickers attempted. This usually happens if Yahoo Finance is rate-limiting the server or if the tickers are invalid.")
+            st.info("💡 **Tip:** Try again in a few minutes, or try a smaller 'Custom Ticker' list (e.g., SPY, QQQ) to see if it works.")
             st.stop()
+
 
         st.session_state.etfs_data = etfs_data
 

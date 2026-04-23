@@ -197,12 +197,19 @@ def render_fund_analysis_page():
             st.success(f"Analyzing {len(tickers)} {selected_category} funds")
 
         # Fetch data
-        st.markdown("### 📊 Fetching Fund Data...")
-        funds_data = st.session_state.fetcher.fetch_multiple(tickers, batch_size=50)
+        st.markdown("### 📊 Fetching Mutual Fund Data...")
+        with st.status("Fetching data from Yahoo Finance...", expanded=True) as status:
+            fund_data = st.session_state.fetcher.fetch_multiple(tickers, batch_size=50)
+            if fund_data:
+                status.update(label=f"✅ Successfully fetched {len(fund_data)} Funds!", state="complete", expanded=False)
+            else:
+                status.update(label="❌ Failed to fetch any Mutual Fund data", state="error", expanded=True)
 
-        if not funds_data:
-            st.error("No data fetched. Please try again or check your internet connection.")
+        if not fund_data:
+            st.error(f"No data fetched for the {len(tickers)} tickers attempted. This usually happens if Yahoo Finance is rate-limiting the server or if the tickers are invalid.")
+            st.info("💡 **Tip:** Try again in a few minutes, or try a smaller 'Custom Ticker' list (e.g., VFIAX, VTSAX) to see if it works.")
             st.stop()
+
 
         st.session_state.funds_data = funds_data
 

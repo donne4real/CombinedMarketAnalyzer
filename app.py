@@ -1,6 +1,7 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import requests
 from datetime import datetime
 
 st.set_page_config(
@@ -60,8 +61,14 @@ def fetch_market_overview():
     data = {}
     
     try:
+        # Setup a robust session
+        session = requests.Session()
+        session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+        })
+        
         # Fetch batch
-        hist = yf.download(list(tickers.keys()), period="5d", progress=False)["Close"]
+        hist = yf.download(list(tickers.keys()), period="5d", progress=False, session=session)["Close"]
         
         for symbol, name in tickers.items():
             try:
