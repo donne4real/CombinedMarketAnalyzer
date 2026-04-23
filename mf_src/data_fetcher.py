@@ -46,86 +46,94 @@ class MutualFundDataFetcher(BaseDataFetcher):
     def fetch_data(self, ticker: str) -> Optional[dict]:
         """
         Fetch comprehensive mutual fund data for a single ticker.
-
-        Args:
-            ticker (str): Mutual fund ticker symbol (e.g., 'VFIAX', 'FXAIX')
-
-        Returns:
-            Optional[dict]: Dictionary containing mutual fund data
         """
+        # Check cache first
         cached = self._get_cached_data(ticker)
         if cached:
-            print(f"  [CACHE] {ticker}")
             return cached
 
-        try:
-            fund = self.get_ticker_obj(ticker)
-            info = fund.info
-
-            if not info or not info.get("symbol"):
-                print(f"  [SKIP] {ticker} - No data available")
-                return None
-
-            data = {
-                "symbol": info.get("symbol", ticker),
-                "name": info.get("shortName") or info.get("longName") or "N/A",
-                "category": info.get("category") or "N/A",
-                "family": info.get("fundFamily") or "N/A",
-                "exchange": info.get("exchange") or "N/A",
-                "nav_price": safe_get_numeric(info, "navPrice"),
-                "price": safe_get_numeric(info, "previousClose") or safe_get_numeric(info, "regularMarketPrice"),
-                "pe_ratio": safe_get_numeric(info, "trailingPE"),
-                "pb_ratio": safe_get_numeric(info, "priceToBook"),
-                "dividend_yield": safe_get_numeric(info, "dividendYield"),
-                "expense_ratio": safe_get_numeric(info, "annualReportExpenseRatio"),
-                "yield": safe_get_numeric(info, "yield"),
-                "ytd_return": safe_get_numeric(info, "ytdReturn"),
-                "three_year_return": safe_get_numeric(info, "threeYearAverageReturn"),
-                "five_year_return": safe_get_numeric(info, "fiveYearAverageReturn"),
-                "ten_year_return": safe_get_numeric(info, "tenYearAverageReturn"),
-                "holdings_count": safe_get_numeric(info, "holdingsCount"),
-                "bond_holdings": safe_get_numeric(info, "bondHoldings"),
-                "stock_holdings": safe_get_numeric(info, "equityHoldings"),
-                "cash_holdings": safe_get_numeric(info, "cashHoldings"),
-                "other_holdings": safe_get_numeric(info, "otherHoldings"),
-                "top_10_holdings_pct": safe_get_numeric(info, "top10Holdings"),
-                "turnover_rate": safe_get_numeric(info, "fundTurnover"),
-                "net_assets": safe_get_numeric(info, "netAssets"),
-                "inception_date": info.get("fundInceptionDate"),
-                "min_initial_investment": safe_get_numeric(info, "minimumInvestment"),
-                "min_subsequent_investment": safe_get_numeric(info, "subsequentInvestment"),
-                "beta": safe_get_numeric(info, "beta"),
-                "alpha": safe_get_numeric(info, "alpha"),
-                "mean_annual_return": safe_get_numeric(info, "meanAnnualReturn"),
-                "risk_rating": info.get("riskRating"),
-                "morningstar_rating": safe_get_numeric(info, "morningStarRating"),
-                "morningstar_risk": info.get("morningStarRiskRating"),
-                "sustainability_rating": safe_get_numeric(info, "sustainabilityRating"),
-            }
-
-            # Get historical data for momentum calculation
+        # Fetch from Yahoo Finance with retry and rotation
+        max_retries = 2
+        for attempt in range(max_retries):
             try:
-                hist = fund.history(period="1y")
-                if hist is not None and len(hist) > 0:
-                    close_prices = hist["Close"]
-                    if len(close_prices) > 0:
-                        data["year_ago_price"] = float(close_prices.iloc[0])
-                    if len(close_prices) > 126:
-                        data["6_month_ago_price"] = float(close_prices.iloc[len(close_prices)//2])
-                    if len(close_prices) > 189:
-                        data["3_month_ago_price"] = float(close_prices.iloc[len(close_prices)*3//4])
+                stock = self.get_ticker_obj(ticker)
+                info = stock.info
+
+                # If info is empty, try rotating and retrying
+                if not info or not info.get("symbol"):
+                    if attempt < max_retries - 1:
+                        print(f"  [RETRY] {ticker} - Attempt {attempt+1} failed, rotating UA...")
+                        self._rotate_user_agent()
+                        time.sleep(2)
+                        continue
+                    else:
+                        print(f"  [SKIP] {ticker} - No data available after retries")
+                        return None
+
+                # Safely extract numeric values with validation
+                data = {
+                    "symbol": info.get("symbol", ticker),
+                    "name": info.get("shortName") or info.get("longName") or "N/A",
+                    "category": info.get("category") or "N/A",
+                    "family": info.get("fundFamily") or "N/A",
+                    "exchange": info.get("exchange") or "N/A",
+                    "nav_price": safe_get_numeric(info, "navPrice"),
+                    "price": safe_get_numeric(info, "previousClose") or safe_get_numeric(info, "regularMarketPrice"),
+                    "pe_ratio": safe_get_numeric(info, "trailingPE"),
+                    "pb_ratio": safe_get_numeric(info, "priceToBook"),
+                    "dividend_yield": safe_get_numeric(info, "dividendYield"),
+                    "expense_ratio": safe_get_numeric(info, "annualReportExpenseRatio"),
+                    "yield": safe_get_numeric(info, "yield"),
+                    "ytd_return": safe_get_numeric(info, "ytdReturn"),
+                    "three_year_return": safe_get_numeric(info, "threeYearAverageReturn"),
+                    "five_year_return": safe_get_numeric(info, "fiveYearAverageReturn"),
+                    "ten_year_return": safe_get_numeric(info, "tenYearAverageReturn"),
+                    "holdings_count": safe_get_numeric(info, "holdingsCount"),
+                    "bond_holdings": safe_get_numeric(info, "bondHoldings"),
+                    "stock_holdings": safe_get_numeric(info, "equityHoldings"),
+                    "cash_holdings": safe_get_numeric(info, "cashHoldings"),
+                    "other_holdings": safe_get_numeric(info, "otherHoldings"),
+                    "top_10_holdings_pct": safe_get_numeric(info, "top10Holdings"),
+                    "turnover_rate": safe_get_numeric(info, "fundTurnover"),
+                    "net_assets": safe_get_numeric(info, "netAssets"),
+                    "inception_date": info.get("fundInceptionDate"),
+                    "min_initial_investment": safe_get_numeric(info, "minimumInvestment"),
+                    "min_subsequent_investment": safe_get_numeric(info, "subsequentInvestment"),
+                    "beta": safe_get_numeric(info, "beta"),
+                    "alpha": safe_get_numeric(info, "alpha"),
+                    "mean_annual_return": safe_get_numeric(info, "meanAnnualReturn"),
+                    "risk_rating": info.get("riskRating"),
+                    "morningstar_rating": safe_get_numeric(info, "morningStarRating"),
+                    "morningstar_risk": info.get("morningStarRiskRating"),
+                    "sustainability_rating": safe_get_numeric(info, "sustainabilityRating"),
+                }
+
+                # Get historical data for momentum calculation
+                try:
+                    hist = stock.history(period="1y")
+                    if hist is not None and len(hist) > 0:
+                        close_prices = hist["Close"]
+                        if len(close_prices) > 0:
+                            data["year_ago_price"] = float(close_prices.iloc[0])
+                        if len(close_prices) > 126:
+                            data["6_month_ago_price"] = float(close_prices.iloc[len(close_prices)//2])
+                        if len(close_prices) > 189:
+                            data["3_month_ago_price"] = float(close_prices.iloc[len(close_prices)*3//4])
+                except Exception as e:
+                    print(f"  [WARN] {ticker} - Could not fetch historical data: {e}")
+
+                self._cache_data(ticker, data)
+                print(f"  [FETCH] {ticker} - {data.get('name', 'N/A')}")
+                return data
+
             except Exception as e:
-                print(f"  [WARN] {ticker} - Could not fetch historical data: {e}")
-
-            self._cache_data(ticker, data)
-            print(f"  [FETCH] {ticker} - {data.get('name', 'N/A')}")
-            return data
-
-        except Exception as e:
-            import traceback
-            print(f"  [ERROR] {ticker} - {str(e)}")
-            print(f"  [DEBUG] Full traceback: {traceback.format_exc()}")
-            return None
+                if attempt < max_retries - 1:
+                    self._rotate_user_agent()
+                    time.sleep(2)
+                    continue
+                print(f"  [ERROR] {ticker} - {str(e)}")
+                return None
+        return None
 
 
 

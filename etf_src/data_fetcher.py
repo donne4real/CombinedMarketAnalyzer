@@ -46,79 +46,87 @@ class ETFDataFetcher(BaseDataFetcher):
     def fetch_data(self, ticker: str) -> Optional[dict]:
         """
         Fetch comprehensive ETF data for a single ticker.
-
-        Args:
-            ticker (str): ETF ticker symbol (e.g., 'SPY', 'QQQ')
-
-        Returns:
-            Optional[dict]: Dictionary containing ETF data
         """
+        # Check cache first
         cached = self._get_cached_data(ticker)
         if cached:
-            print(f"  [CACHE] {ticker}")
             return cached
 
-        try:
-            etf = self.get_ticker_obj(ticker)
-            info = etf.info
-
-            if not info or not info.get("symbol"):
-                print(f"  [SKIP] {ticker} - No data available from Yahoo Finance")
-                return None
-
-            data = {
-                "symbol": info.get("symbol", ticker),
-                "name": info.get("shortName") or info.get("longName") or "N/A",
-                "category": info.get("category") or "N/A",
-                "family": info.get("fundFamily") or "N/A",
-                "exchange": info.get("exchange") or "N/A",
-                "market_cap": safe_get_numeric(info, "marketCap"),
-                "nav_price": safe_get_numeric(info, "navPrice"),
-                "price": safe_get_numeric(info, "currentPrice") or safe_get_numeric(info, "regularMarketPrice"),
-                "pe_ratio": safe_get_numeric(info, "trailingPE"),
-                "pb_ratio": safe_get_numeric(info, "priceToBook"),
-                "dividend_yield": safe_get_numeric(info, "dividendYield"),
-                "expense_ratio": safe_get_numeric(info, "annualReportExpenseRatio"),
-                "beta": safe_get_numeric(info, "beta"),
-                "52_week_high": safe_get_numeric(info, "fiftyTwoWeekHigh"),
-                "52_week_low": safe_get_numeric(info, "fiftyTwoWeekLow"),
-                "50_day_avg": safe_get_numeric(info, "fiftyDayAverage"),
-                "200_day_avg": safe_get_numeric(info, "twoHundredDayAverage"),
-                "ytd_return": safe_get_numeric(info, "ytdReturn"),
-                "three_year_return": safe_get_numeric(info, "threeYearAverageReturn"),
-                "five_year_return": safe_get_numeric(info, "fiveYearAverageReturn"),
-                "holdings_count": safe_get_numeric(info, "holdingsCount"),
-                "bond_holdings": safe_get_numeric(info, "bondHoldings"),
-                "stock_holdings": safe_get_numeric(info, "equityHoldings"),
-                "top_10_holdings_pct": safe_get_numeric(info, "top10Holdings"),
-                "volume": safe_get_numeric(info, "volume"),
-                "avg_volume": safe_get_numeric(info, "averageVolume"),
-                "fund_inception_date": info.get("fundInceptionDate"),
-            }
-
-            # Get historical data for momentum calculation
+        # Fetch from Yahoo Finance with retry and rotation
+        max_retries = 2
+        for attempt in range(max_retries):
             try:
-                hist = etf.history(period="1y")
-                if hist is not None and len(hist) > 0:
-                    close_prices = hist["Close"]
-                    if len(close_prices) > 0:
-                        data["year_ago_price"] = float(close_prices.iloc[0])
-                    if len(close_prices) > 126:
-                        data["6_month_ago_price"] = float(close_prices.iloc[len(close_prices)//2])
-                    if len(close_prices) > 189:
-                        data["3_month_ago_price"] = float(close_prices.iloc[len(close_prices)*3//4])
+                stock = self.get_ticker_obj(ticker)
+                info = stock.info
+
+                # If info is empty, try rotating and retrying
+                if not info or not info.get("symbol"):
+                    if attempt < max_retries - 1:
+                        print(f"  [RETRY] {ticker} - Attempt {attempt+1} failed, rotating UA...")
+                        self._rotate_user_agent()
+                        time.sleep(2)
+                        continue
+                    else:
+                        print(f"  [SKIP] {ticker} - No data available after retries")
+                        return None
+
+                # Safely extract numeric values with validation
+                data = {
+                    "symbol": info.get("symbol", ticker),
+                    "name": info.get("shortName") or info.get("longName") or "N/A",
+                    "category": info.get("category") or "N/A",
+                    "family": info.get("fundFamily") or "N/A",
+                    "exchange": info.get("exchange") or "N/A",
+                    "market_cap": safe_get_numeric(info, "marketCap"),
+                    "nav_price": safe_get_numeric(info, "navPrice"),
+                    "price": safe_get_numeric(info, "currentPrice") or safe_get_numeric(info, "regularMarketPrice"),
+                    "pe_ratio": safe_get_numeric(info, "trailingPE"),
+                    "pb_ratio": safe_get_numeric(info, "priceToBook"),
+                    "dividend_yield": safe_get_numeric(info, "dividendYield"),
+                    "expense_ratio": safe_get_numeric(info, "annualReportExpenseRatio"),
+                    "beta": safe_get_numeric(info, "beta"),
+                    "52_week_high": safe_get_numeric(info, "fiftyTwoWeekHigh"),
+                    "52_week_low": safe_get_numeric(info, "fiftyTwoWeekLow"),
+                    "50_day_avg": safe_get_numeric(info, "fiftyDayAverage"),
+                    "200_day_avg": safe_get_numeric(info, "twoHundredDayAverage"),
+                    "ytd_return": safe_get_numeric(info, "ytdReturn"),
+                    "three_year_return": safe_get_numeric(info, "threeYearAverageReturn"),
+                    "five_year_return": safe_get_numeric(info, "fiveYearAverageReturn"),
+                    "holdings_count": safe_get_numeric(info, "holdingsCount"),
+                    "bond_holdings": safe_get_numeric(info, "bondHoldings"),
+                    "stock_holdings": safe_get_numeric(info, "equityHoldings"),
+                    "top_10_holdings_pct": safe_get_numeric(info, "top10Holdings"),
+                    "volume": safe_get_numeric(info, "volume"),
+                    "avg_volume": safe_get_numeric(info, "averageVolume"),
+                    "fund_inception_date": info.get("fundInceptionDate"),
+                }
+
+                # Get historical data for momentum calculation
+                try:
+                    hist = stock.history(period="1y")
+                    if hist is not None and len(hist) > 0:
+                        close_prices = hist["Close"]
+                        if len(close_prices) > 0:
+                            data["year_ago_price"] = float(close_prices.iloc[0])
+                        if len(close_prices) > 126:
+                            data["6_month_ago_price"] = float(close_prices.iloc[len(close_prices)//2])
+                        if len(close_prices) > 189:
+                            data["3_month_ago_price"] = float(close_prices.iloc[len(close_prices)*3//4])
+                except Exception as e:
+                    print(f"  [WARN] {ticker} - Could not fetch historical data: {e}")
+
+                self._cache_data(ticker, data)
+                print(f"  [FETCH] {ticker} - {data.get('name', 'N/A')}")
+                return data
+
             except Exception as e:
-                print(f"  [WARN] {ticker} - Could not fetch historical data: {e}")
-
-            self._cache_data(ticker, data)
-            print(f"  [FETCH] {ticker} - {data.get('name', 'N/A')}")
-            return data
-
-        except Exception as e:
-            import traceback
-            print(f"  [ERROR] {ticker} - {str(e)}")
-            print(f"  [DEBUG] Full traceback: {traceback.format_exc()}")
-            return None
+                if attempt < max_retries - 1:
+                    self._rotate_user_agent()
+                    time.sleep(2)
+                    continue
+                print(f"  [ERROR] {ticker} - {str(e)}")
+                return None
+        return None
 
 
 

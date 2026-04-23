@@ -60,106 +60,91 @@ class StockDataFetcher(BaseDataFetcher):
     def fetch_data(self, ticker: str) -> Optional[dict]:
         """
         Fetch comprehensive stock data for a single ticker.
-
-        Checks cache first. If cache miss or expired, fetches from Yahoo Finance
-        with rate limiting. Stores result in cache for future requests.
-
-        Args:
-            ticker (str): Stock ticker symbol (e.g., 'AAPL', 'MSFT')
-
-        Returns:
-            Optional[dict]: Dictionary containing stock data with fields:
-                - symbol, name, sector, industry, exchange
-                - market_cap, price, pe_ratio, pb_ratio, peg_ratio
-                - dividend_yield, eps, beta, 52_week_high/low
-                - 50_day_avg, 200_day_avg, revenue_growth, earnings_growth
-                - roe, roa, debt_to_equity, current_ratio
-                - free_cash_flow, operating_cash_flow, profit_margin
-                - year_ago_price, 6_month_ago_price, 3_month_ago_price
-            Returns None if ticker is invalid or data unavailable.
-
-        Example:
-            >>> fetcher = StockDataFetcher()
-            >>> stock = fetcher.fetch_data("AAPL")
-            >>> if stock:
-            ...     print(f"{stock['name']}: ${stock['price']}")
         """
         # Check cache first
         cached = self._get_cached_data(ticker)
         if cached:
-            print(f"  [CACHE] {ticker}")
             return cached
 
-        # Fetch from Yahoo Finance with rate limiting
-        try:
-              # Rate limiting
-            stock = self.get_ticker_obj(ticker)
-            info = stock.info
-
-            # Skip if no valid data
-            if not info or not info.get("symbol"):
-                print(f"  [SKIP] {ticker} - No data available")
-                return None
-
-            # Safely extract numeric values with validation
-            # Extract relevant fields with safe defaults
-            data = {
-                "symbol": info.get("symbol", ticker),
-                "name": info.get("shortName") or info.get("longName") or "N/A",
-                "sector": info.get("sector") or "N/A",
-                "industry": info.get("industry") or "N/A",
-                "exchange": info.get("exchange") or "N/A",
-                "market_cap": safe_get_numeric(info, "marketCap"),
-                "price": safe_get_numeric(info, "currentPrice") or safe_get_numeric(info, "regularMarketPrice"),
-                "pe_ratio": safe_get_numeric(info, "trailingPE"),
-                "forward_pe": safe_get_numeric(info, "forwardPE"),
-                "pb_ratio": safe_get_numeric(info, "priceToBook"),
-                "ps_ratio": safe_get_numeric(info, "priceToSalesTrailing12Months"),
-                "peg_ratio": safe_get_numeric(info, "pegRatio"),
-                "dividend_yield": safe_get_numeric(info, "dividendYield"),
-                "eps": safe_get_numeric(info, "trailingEps"),
-                "beta": safe_get_numeric(info, "beta"),
-                "52_week_high": safe_get_numeric(info, "fiftyTwoWeekHigh"),
-                "52_week_low": safe_get_numeric(info, "fiftyTwoWeekLow"),
-                "50_day_avg": safe_get_numeric(info, "fiftyDayAverage"),
-                "200_day_avg": safe_get_numeric(info, "twoHundredDayAverage"),
-                "revenue_growth": safe_get_numeric(info, "revenueGrowth"),
-                "earnings_growth": safe_get_numeric(info, "earningsGrowth"),
-                "roe": safe_get_numeric(info, "returnOnEquity"),
-                "roa": safe_get_numeric(info, "returnOnAssets"),
-                "debt_to_equity": safe_get_numeric(info, "debtToEquity"),
-                "current_ratio": safe_get_numeric(info, "currentRatio"),
-                "free_cash_flow": safe_get_numeric(info, "freeCashflow"),
-                "operating_cash_flow": safe_get_numeric(info, "operatingCashflow"),
-                "profit_margin": safe_get_numeric(info, "profitMargins"),
-                "payout_ratio": safe_get_numeric(info, "payoutRatio"),
-                "volume": safe_get_numeric(info, "volume"),
-                "avg_volume": safe_get_numeric(info, "averageVolume"),
-            }
-
-            # Get historical data for momentum calculation
+        # Fetch from Yahoo Finance with retry and rotation
+        max_retries = 2
+        for attempt in range(max_retries):
             try:
-                hist = stock.history(period="1y")
-                if hist is not None and len(hist) > 0:
-                    close_prices = hist["Close"]
-                    if len(close_prices) > 0:
-                        data["year_ago_price"] = float(close_prices.iloc[0])
-                    if len(close_prices) > 126:  # ~6 months
-                        data["6_month_ago_price"] = float(close_prices.iloc[len(close_prices)//2])
-                    if len(close_prices) > 189:  # ~3 months from end
-                        data["3_month_ago_price"] = float(close_prices.iloc[len(close_prices)*3//4])
+                stock = self.get_ticker_obj(ticker)
+                info = stock.info
+
+                # If info is empty, try rotating and retrying
+                if not info or not info.get("symbol"):
+                    if attempt < max_retries - 1:
+                        print(f"  [RETRY] {ticker} - Attempt {attempt+1} failed, rotating UA...")
+                        self._rotate_user_agent()
+                        time.sleep(2)
+                        continue
+                    else:
+                        print(f"  [SKIP] {ticker} - No data available after retries")
+                        return None
+
+                # Safely extract numeric values with validation
+                data = {
+                    "symbol": info.get("symbol", ticker),
+                    "name": info.get("shortName") or info.get("longName") or "N/A",
+                    "sector": info.get("sector") or "N/A",
+                    "industry": info.get("industry") or "N/A",
+                    "exchange": info.get("exchange") or "N/A",
+                    "market_cap": safe_get_numeric(info, "marketCap"),
+                    "price": safe_get_numeric(info, "currentPrice") or safe_get_numeric(info, "regularMarketPrice"),
+                    "pe_ratio": safe_get_numeric(info, "trailingPE"),
+                    "forward_pe": safe_get_numeric(info, "forwardPE"),
+                    "pb_ratio": safe_get_numeric(info, "priceToBook"),
+                    "ps_ratio": safe_get_numeric(info, "priceToSalesTrailing12Months"),
+                    "peg_ratio": safe_get_numeric(info, "pegRatio"),
+                    "dividend_yield": safe_get_numeric(info, "dividendYield"),
+                    "eps": safe_get_numeric(info, "trailingEps"),
+                    "beta": safe_get_numeric(info, "beta"),
+                    "52_week_high": safe_get_numeric(info, "fiftyTwoWeekHigh"),
+                    "52_week_low": safe_get_numeric(info, "fiftyTwoWeekLow"),
+                    "50_day_avg": safe_get_numeric(info, "fiftyDayAverage"),
+                    "200_day_avg": safe_get_numeric(info, "twoHundredDayAverage"),
+                    "revenue_growth": safe_get_numeric(info, "revenueGrowth"),
+                    "earnings_growth": safe_get_numeric(info, "earningsGrowth"),
+                    "roe": safe_get_numeric(info, "returnOnEquity"),
+                    "roa": safe_get_numeric(info, "returnOnAssets"),
+                    "debt_to_equity": safe_get_numeric(info, "debtToEquity"),
+                    "current_ratio": safe_get_numeric(info, "currentRatio"),
+                    "free_cash_flow": safe_get_numeric(info, "freeCashflow"),
+                    "operating_cash_flow": safe_get_numeric(info, "operatingCashflow"),
+                    "profit_margin": safe_get_numeric(info, "profitMargins"),
+                    "payout_ratio": safe_get_numeric(info, "payoutRatio"),
+                    "volume": safe_get_numeric(info, "volume"),
+                    "avg_volume": safe_get_numeric(info, "averageVolume"),
+                }
+
+                # Get historical data for momentum calculation
+                try:
+                    hist = stock.history(period="1y")
+                    if hist is not None and len(hist) > 0:
+                        close_prices = hist["Close"]
+                        if len(close_prices) > 0:
+                            data["year_ago_price"] = float(close_prices.iloc[0])
+                        if len(close_prices) > 126:  # ~6 months
+                            data["6_month_ago_price"] = float(close_prices.iloc[len(close_prices)//2])
+                        if len(close_prices) > 189:  # ~3 months from end
+                            data["3_month_ago_price"] = float(close_prices.iloc[len(close_prices)*3//4])
+                except Exception as e:
+                    print(f"  [WARN] {ticker} - Could not fetch historical data: {e}")
+
+                self._cache_data(ticker, data)
+                print(f"  [FETCH] {ticker} - {data.get('name', 'N/A')}")
+                return data
+
             except Exception as e:
-                print(f"  [WARN] {ticker} - Could not fetch historical data: {e}")
-
-            self._cache_data(ticker, data)
-            print(f"  [FETCH] {ticker} - {data.get('name', 'N/A')}")
-            return data
-
-        except Exception as e:
-            import traceback
-            print(f"  [ERROR] {ticker} - {str(e)}")
-            print(f"  [DEBUG] Full traceback: {traceback.format_exc()}")
-            return None
+                if attempt < max_retries - 1:
+                    self._rotate_user_agent()
+                    time.sleep(2)
+                    continue
+                print(f"  [ERROR] {ticker} - {str(e)}")
+                return None
+        return None
 
 
 

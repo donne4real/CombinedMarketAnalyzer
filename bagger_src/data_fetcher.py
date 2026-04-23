@@ -46,144 +46,136 @@ class StockDataFetcher(BaseDataFetcher):
     def fetch_data(self, ticker: str) -> Optional[dict]:
         """
         Fetch comprehensive stock data for 100-bagger analysis.
-
-        Args:
-            ticker (str): Stock ticker symbol (e.g., 'AAPL', 'MSFT')
-
-        Returns:
-            Optional[dict]: Dictionary containing stock data with focus on:
-                - Growth metrics (revenue, earnings growth)
-                - Value metrics (P/E, PEG, P/B)
-                - Financial health (debt, margins, ROE)
-                - Insider ownership and buybacks
         """
+        # Check cache first
         cached = self._get_cached_data(ticker)
         if cached:
-            print(f"  [CACHE] {ticker}")
             return cached
 
-        try:
-            stock = self.get_ticker_obj(ticker)
-            info = stock.info
-
-            if not info or not info.get("symbol"):
-                print(f"  [SKIP] {ticker} - No data available")
-                return None
-
-            # Get financials for deeper analysis
+        # Fetch from Yahoo Finance with retry and rotation
+        max_retries = 2
+        for attempt in range(max_retries):
             try:
-                income_stmt = stock.financials
-                balance_sheet = stock.balance_sheet
-                cash_flow = stock.cashflow
-            except:
-                income_stmt = None
-                balance_sheet = None
-                cash_flow = None
+                stock = self.get_ticker_obj(ticker)
+                info = stock.info
 
-            data = {
-                # Basic Info
-                "symbol": info.get("symbol", ticker),
-                "name": info.get("shortName") or info.get("longName") or "N/A",
-                "sector": info.get("sector") or "N/A",
-                "industry": info.get("industry") or "N/A",
-                "exchange": info.get("exchange") or "N/A",
-                "market_cap": safe_get_numeric(info, "marketCap"),
-                
-                # Price Data
-                "price": safe_get_numeric(info, "currentPrice") or safe_get_numeric(info, "regularMarketPrice"),
-                "52_week_high": safe_get_numeric(info, "fiftyTwoWeekHigh"),
-                "52_week_low": safe_get_numeric(info, "fiftyTwoWeekLow"),
-                "50_day_avg": safe_get_numeric(info, "fiftyDayAverage"),
-                "200_day_avg": safe_get_numeric(info, "twoHundredDayAverage"),
-                
-                # Valuation Metrics (Peter Lynch Focus)
-                "pe_ratio": safe_get_numeric(info, "trailingPE"),
-                "forward_pe": safe_get_numeric(info, "forwardPE"),
-                "peg_ratio": safe_get_numeric(info, "pegRatio"),
-                "pb_ratio": safe_get_numeric(info, "priceToBook"),
-                "ps_ratio": safe_get_numeric(info, "priceToSalesTrailing12Months"),
-                
-                # Growth Metrics (Critical for 100-baggers)
-                "revenue_growth": safe_get_numeric(info, "revenueGrowth"),
-                "earnings_growth": safe_get_numeric(info, "earningsGrowth"),
-                "revenue_per_share_growth": safe_get_numeric(info, "revenuePerShareGrowth"),
-                
-                # Profitability Metrics
-                "profit_margin": safe_get_numeric(info, "profitMargins"),
-                "gross_margin": safe_get_numeric(info, "grossMargins"),
-                "operating_margin": safe_get_numeric(info, "operatingMargins"),
-                "roe": safe_get_numeric(info, "returnOnEquity"),
-                "roa": safe_get_numeric(info, "returnOnAssets"),
-                "roic": safe_get_numeric(info, "returnOnInvestedCapital"),
-                
-                # Financial Health
-                "debt_to_equity": safe_get_numeric(info, "debtToEquity"),
-                "current_ratio": safe_get_numeric(info, "currentRatio"),
-                "quick_ratio": safe_get_numeric(info, "quickRatio"),
-                "total_debt": safe_get_numeric(info, "totalDebt"),
-                "total_cash": safe_get_numeric(info, "totalCash"),
-                "free_cash_flow": safe_get_numeric(info, "freeCashflow"),
-                "operating_cash_flow": safe_get_numeric(info, "operatingCashflow"),
-                
-                # Per Share Data
-                "eps": safe_get_numeric(info, "trailingEps"),
-                "book_value_per_share": safe_get_numeric(info, "bookValue"),
-                "revenue_per_share": safe_get_numeric(info, "revenuePerShare"),
-                
-                # Dividend & Buybacks
-                "dividend_yield": safe_get_numeric(info, "dividendYield"),
-                "payout_ratio": safe_get_numeric(info, "payoutRatio"),
-                
-                # Insider & Institutional Ownership (Lynch criteria)
-                "insider_ownership": safe_get_numeric(info, "insiderPercentHeld"),
-                "institutional_ownership": safe_get_numeric(info, "institutionPercentHeld"),
-                "shares_outstanding": safe_get_numeric(info, "sharesOutstanding"),
-                "shares_short": safe_get_numeric(info, "sharesShort"),
-                "short_ratio": safe_get_numeric(info, "shortRatio"),
-                
-                # Trading Data
-                "beta": safe_get_numeric(info, "beta"),
-                "volume": safe_get_numeric(info, "volume"),
-                "avg_volume": safe_get_numeric(info, "averageVolume"),
-                
-                # Analyst Data
-                "target_price": safe_get_numeric(info, "targetHighPrice"),
-                "recommendation": info.get("recommendationKey", "N/A"),
-            }
+                # If info is empty, try rotating and retrying
+                if not info or not info.get("symbol"):
+                    if attempt < max_retries - 1:
+                        print(f"  [RETRY] {ticker} - Attempt {attempt+1} failed, rotating UA...")
+                        self._rotate_user_agent()
+                        time.sleep(2)
+                        continue
+                    else:
+                        print(f"  [SKIP] {ticker} - No data available after retries")
+                        return None
 
-            # Calculate additional metrics
-            # PEG Ratio calculation if not provided
-            if data["peg_ratio"] is None and data["pe_ratio"] and data["earnings_growth"]:
-                if data["earnings_growth"] > 0:
-                    data["peg_ratio"] = data["pe_ratio"] / (data["earnings_growth"] * 100)
-            
-            # Calculate price position in 52-week range
-            if data["price"] and data["52_week_high"] and data["52_week_low"]:
-                data["price_in_range"] = (data["price"] - data["52_week_low"]) / (data["52_week_high"] - data["52_week_low"])
-            
-            # Get historical data for momentum
-            try:
-                hist = stock.history(period="1y")
-                if hist is not None and len(hist) > 0:
-                    close_prices = hist["Close"]
-                    if len(close_prices) > 0:
-                        data["year_ago_price"] = float(close_prices.iloc[0])
-                    if len(close_prices) > 126:
-                        data["6_month_ago_price"] = float(close_prices.iloc[len(close_prices)//2])
-                    if len(close_prices) > 189:
-                        data["3_month_ago_price"] = float(close_prices.iloc[len(close_prices)*3//4])
+                # Safely extract numeric values with validation
+                data = {
+                    # Basic Info
+                    "symbol": info.get("symbol", ticker),
+                    "name": info.get("shortName") or info.get("longName") or "N/A",
+                    "sector": info.get("sector") or "N/A",
+                    "industry": info.get("industry") or "N/A",
+                    "exchange": info.get("exchange") or "N/A",
+                    "market_cap": safe_get_numeric(info, "marketCap"),
+                    
+                    # Price Data
+                    "price": safe_get_numeric(info, "currentPrice") or safe_get_numeric(info, "regularMarketPrice"),
+                    "52_week_high": safe_get_numeric(info, "fiftyTwoWeekHigh"),
+                    "52_week_low": safe_get_numeric(info, "fiftyTwoWeekLow"),
+                    "50_day_avg": safe_get_numeric(info, "fiftyDayAverage"),
+                    "200_day_avg": safe_get_numeric(info, "twoHundredDayAverage"),
+                    
+                    # Valuation Metrics (Peter Lynch Focus)
+                    "pe_ratio": safe_get_numeric(info, "trailingPE"),
+                    "forward_pe": safe_get_numeric(info, "forwardPE"),
+                    "peg_ratio": safe_get_numeric(info, "pegRatio"),
+                    "pb_ratio": safe_get_numeric(info, "priceToBook"),
+                    "ps_ratio": safe_get_numeric(info, "priceToSalesTrailing12Months"),
+                    
+                    # Growth Metrics (Critical for 100-baggers)
+                    "revenue_growth": safe_get_numeric(info, "revenueGrowth"),
+                    "earnings_growth": safe_get_numeric(info, "earningsGrowth"),
+                    "revenue_per_share_growth": safe_get_numeric(info, "revenuePerShareGrowth"),
+                    
+                    # Profitability Metrics
+                    "profit_margin": safe_get_numeric(info, "profitMargins"),
+                    "gross_margin": safe_get_numeric(info, "grossMargins"),
+                    "operating_margin": safe_get_numeric(info, "operatingMargins"),
+                    "roe": safe_get_numeric(info, "returnOnEquity"),
+                    "roa": safe_get_numeric(info, "returnOnAssets"),
+                    "roic": safe_get_numeric(info, "returnOnInvestedCapital"),
+                    
+                    # Financial Health
+                    "debt_to_equity": safe_get_numeric(info, "debtToEquity"),
+                    "current_ratio": safe_get_numeric(info, "currentRatio"),
+                    "quick_ratio": safe_get_numeric(info, "quickRatio"),
+                    "total_debt": safe_get_numeric(info, "totalDebt"),
+                    "total_cash": safe_get_numeric(info, "totalCash"),
+                    "free_cash_flow": safe_get_numeric(info, "freeCashflow"),
+                    "operating_cash_flow": safe_get_numeric(info, "operatingCashflow"),
+                    
+                    # Per Share Data
+                    "eps": safe_get_numeric(info, "trailingEps"),
+                    "book_value_per_share": safe_get_numeric(info, "bookValue"),
+                    "revenue_per_share": safe_get_numeric(info, "revenuePerShare"),
+                    
+                    # Dividend & Buybacks
+                    "dividend_yield": safe_get_numeric(info, "dividendYield"),
+                    "payout_ratio": safe_get_numeric(info, "payoutRatio"),
+                    
+                    # Insider & Institutional Ownership (Lynch criteria)
+                    "insider_ownership": safe_get_numeric(info, "insiderPercentHeld"),
+                    "institutional_ownership": safe_get_numeric(info, "institutionPercentHeld"),
+                    "shares_outstanding": safe_get_numeric(info, "sharesOutstanding"),
+                    "shares_short": safe_get_numeric(info, "sharesShort"),
+                    "short_ratio": safe_get_numeric(info, "shortRatio"),
+                    
+                    # Trading Data
+                    "beta": safe_get_numeric(info, "beta"),
+                    "volume": safe_get_numeric(info, "volume"),
+                    "avg_volume": safe_get_numeric(info, "averageVolume"),
+                    
+                    # Analyst Data
+                    "target_price": safe_get_numeric(info, "targetHighPrice"),
+                    "recommendation": info.get("recommendationKey", "N/A"),
+                }
+
+                # Calculate additional metrics
+                if data["peg_ratio"] is None and data["pe_ratio"] and data["earnings_growth"]:
+                    if data["earnings_growth"] > 0:
+                        data["peg_ratio"] = data["pe_ratio"] / (data["earnings_growth"] * 100)
+                
+                if data["price"] and data["52_week_high"] and data["52_week_low"]:
+                    data["price_in_range"] = (data["price"] - data["52_week_low"]) / (data["52_week_high"] - data["52_week_low"])
+                
+                # Get historical data for momentum calculation
+                try:
+                    hist = stock.history(period="1y")
+                    if hist is not None and len(hist) > 0:
+                        close_prices = hist["Close"]
+                        if len(close_prices) > 0:
+                            data["year_ago_price"] = float(close_prices.iloc[0])
+                        if len(close_prices) > 126:
+                            data["6_month_ago_price"] = float(close_prices.iloc[len(close_prices)//2])
+                        if len(close_prices) > 189:
+                            data["3_month_ago_price"] = float(close_prices.iloc[len(close_prices)*3//4])
+                except Exception as e:
+                    print(f"  [WARN] {ticker} - Could not fetch historical data: {e}")
+
+                self._cache_data(ticker, data)
+                print(f"  [FETCH] {ticker} - {data.get('name', 'N/A')}")
+                return data
+
             except Exception as e:
-                print(f"  [WARN] {ticker} - Could not fetch historical data: {e}")
-
-            self._cache_data(ticker, data)
-            print(f"  [FETCH] {ticker} - {data.get('name', 'N/A')}")
-            return data
-
-        except Exception as e:
-            import traceback
-            print(f"  [ERROR] {ticker} - {str(e)}")
-            print(f"  [DEBUG] Full traceback: {traceback.format_exc()}")
-            return None
+                if attempt < max_retries - 1:
+                    self._rotate_user_agent()
+                    time.sleep(2)
+                    continue
+                print(f"  [ERROR] {ticker} - {str(e)}")
+                return None
+        return None
 
 
 

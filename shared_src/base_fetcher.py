@@ -5,7 +5,7 @@ import time
 import random
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Callable
 
 import yfinance as yf
 import requests
@@ -20,6 +20,14 @@ else:
     CACHE_BASE_DIR = Path.home() / ".qwen_combined_analyzer" / "cache"
     
 CACHE_EXPIRY_HOURS = 24
+
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/121.0.0.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15',
+]
 
 class CachedLimiterSession(CacheMixin, LimiterMixin, requests.Session):
     """A session that handles both caching and rate limiting."""
@@ -49,8 +57,8 @@ class BaseDataFetcher:
         """Setup a robust requests session for yfinance."""
         sqlite_cache = CACHE_BASE_DIR / "yfinance_cache.sqlite"
         
-        # Rate limit: 1 request per 1.5 seconds to be conservative
-        limiter = Limiter(RequestRate(1, Duration.SECOND * 1.5))
+        # Rate limit: 1 request per 2 seconds to be very conservative
+        limiter = Limiter(RequestRate(1, Duration.SECOND * 2))
         
         session = CachedLimiterSession(
             limiter=limiter,
@@ -60,15 +68,21 @@ class BaseDataFetcher:
             allowable_codes=(200,)
         )
         
-        # Modern User-Agent
+        # Random initial User-Agent
         session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'User-Agent': random.choice(USER_AGENTS),
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
             'Upgrade-Insecure-Requests': '1'
         })
         
         return session
+
+    def _rotate_user_agent(self):
+        """Rotate to a different User-Agent to help avoid persistent IP/browser fingerprint blocks."""
+        new_ua = random.choice(USER_AGENTS)
+        self.session.headers.update({'User-Agent': new_ua})
+        return new_ua
 
     def _load_cache(self):
         """Load existing JSON cache from disk."""
@@ -123,25 +137,33 @@ class BaseDataFetcher:
         """To be implemented by subclasses."""
         raise NotImplementedError("Subclasses must implement fetch_data")
 
-    def fetch_multiple(self, tickers: list, batch_size: int = 50, item_name: str = "items") -> list:
+    def fetch_multiple(self, tickers: list, batch_size: int = 50, item_name: str = "items", 
+                       progress_callback: Optional[Callable[[int, int, str], None]] = None) -> list:
         """
-        Fetch data for multiple tickers with random delays and error protection.
+        Fetch data for multiple tickers with intelligent retry logic and error protection.
         """
         results = []
         consecutive_failures = 0
         total = len(tickers)
 
         for i, ticker in enumerate(tickers, 1):
-            # Check if already in cache to skip delay
+            if progress_callback:
+                progress_callback(i, total, ticker)
+            
+            # Check if already in cache
             if self._is_cache_valid(ticker):
                 data = self._get_cached_data(ticker)
                 if data:
                     results.append(data)
                     continue
 
-            # Random small delay for non-cached items to mimic human behavior
+            # Adaptive delay
+            delay = random.uniform(1.0, 3.0)
+            if consecutive_failures > 0:
+                delay += consecutive_failures * 2  # Exponential-ish backoff
+            
             if i > 1:
-                time.sleep(random.uniform(0.5, 1.5))
+                time.sleep(delay)
 
             try:
                 data = self.fetch_data(ticker)
@@ -150,16 +172,23 @@ class BaseDataFetcher:
                     consecutive_failures = 0
                 else:
                     consecutive_failures += 1
+                    if consecutive_failures % 5 == 0:
+                        self._rotate_user_agent()
             except Exception as e:
                 self.last_error = str(e)
                 consecutive_failures += 1
                 print(f"Error fetching {ticker}: {e}")
+                if consecutive_failures % 3 == 0:
+                    self._rotate_user_agent()
 
-            # Safety break if being hard-blocked
-            if consecutive_failures >= 10:
-                self.last_error = "Too many consecutive failures. Yahoo Finance may be rate-limiting."
-                print("Aborting fetch due to consecutive failures.")
-                break
+            # "Cooling off" if we hit a streak of failures
+            if consecutive_failures >= 15:
+                wait_time = 60 # 1 minute cooling off
+                print(f"Streaked {consecutive_failures} failures. Cooling off for {wait_time}s...")
+                if progress_callback:
+                    progress_callback(i, total, f"Cooling off ({wait_time}s)...")
+                time.sleep(wait_time)
+                consecutive_failures = 5 # Reset but keep partial penalty
 
         return results
 

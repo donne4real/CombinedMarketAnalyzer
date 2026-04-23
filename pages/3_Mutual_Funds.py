@@ -199,7 +199,15 @@ def render_fund_analysis_page():
         # Fetch data
         st.markdown("### 📊 Fetching Mutual Fund Data...")
         with st.status("Fetching data from Yahoo Finance...", expanded=True) as status:
-            fund_data = st.session_state.fetcher.fetch_multiple(tickers, batch_size=50)
+            def update_progress(current, total, ticker):
+                status.write(f"[{current}/{total}] Fetching {ticker}...")
+
+            fund_data = st.session_state.fetcher.fetch_multiple(
+                tickers, 
+                batch_size=50,
+                progress_callback=update_progress
+            )
+            
             if fund_data:
                 status.update(label=f"✅ Successfully fetched {len(fund_data)} Funds!", state="complete", expanded=False)
             else:
