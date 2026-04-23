@@ -273,7 +273,8 @@ def render_main_page():
                 status.update(label="❌ Failed to fetch any stock data", state="error", expanded=True)
 
         if not stocks_data:
-            st.error(f"No data fetched for the {len(tickers)} tickers attempted. This usually happens if Yahoo Finance is rate-limiting the server or if the tickers are invalid.")
+            error_msg = st.session_state.fetcher.last_error or "Yahoo Finance is rate-limiting the server or the tickers are invalid."
+            st.error(f"No data fetched for the {len(tickers)} tickers attempted. Reason: {error_msg}")
             st.info("💡 **Tip:** Try again in a few minutes, or try a smaller 'Custom Ticker' list (e.g., AAPL, MSFT) to see if it works.")
             st.stop()
 
