@@ -1,14 +1,27 @@
 import json
 from pathlib import Path
+from enum import Enum
 
 # Use the same base directory as the cache
 WATCHLIST_FILE = Path.home() / ".qwen_combined_analyzer" / "watchlist.json"
+
+
+class AssetType(str, Enum):
+    """Enum for asset types."""
+    STOCKS = "stocks"
+    ETFS = "etfs"
+    FUNDS = "funds"
+
 
 class WatchlistManager:
     """Manages a persistent watchlist of multi-asset tickers (Stocks, ETFs, Mutual Funds)."""
     
     def __init__(self):
         self.watchlist = self._load_watchlist()
+    
+    def _get_default_watchlist(self) -> dict:
+        """Get default empty watchlist structure."""
+        return {asset_type.value: [] for asset_type in AssetType}
 
     def _load_watchlist(self) -> dict:
         """Loads the watchlist from disk."""
@@ -17,8 +30,8 @@ class WatchlistManager:
                 with open(WATCHLIST_FILE, "r", encoding="utf-8") as f:
                     return json.load(f)
             except (json.JSONDecodeError, IOError):
-                return {"stocks": [], "etfs": [], "funds": []}
-        return {"stocks": [], "etfs": [], "funds": []}
+                return self._get_default_watchlist()
+        return self._get_default_watchlist()
 
     def _save_watchlist(self):
         """Saves current watchlist to disk."""

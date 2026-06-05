@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-from shared_src.watchlist_manager import WatchlistManager
+from shared_src.watchlist_manager import WatchlistManager, AssetType
 from stock_src.data_fetcher import StockDataFetcher
 from etf_src.data_fetcher import ETFDataFetcher
 from mf_src.data_fetcher import MutualFundDataFetcher
@@ -34,7 +34,7 @@ with st.sidebar:
     with st.form("add_ticker_form", clear_on_submit=True):
         st.subheader("Add Asset")
         new_ticker = st.text_input("Ticker Symbol (e.g., AAPL, SPY)").upper()
-        asset_type = st.selectbox("Asset Type", ["stocks", "etfs", "funds"])
+        asset_type = st.selectbox("Asset Type", [at.value for at in AssetType])
         submit_add = st.form_submit_button("Add to Watchlist")
         
         if submit_add and new_ticker:
@@ -49,7 +49,7 @@ with st.sidebar:
     with st.form("remove_ticker_form", clear_on_submit=True):
         st.subheader("Remove Asset")
         rem_ticker = st.text_input("Ticker to Remove").upper()
-        rem_asset_type = st.selectbox("Type", ["stocks", "etfs", "funds"])
+        rem_asset_type = st.selectbox("Type", [at.value for at in AssetType])
         submit_remove = st.form_submit_button("Remove from Watchlist")
         
         if submit_remove and rem_ticker:

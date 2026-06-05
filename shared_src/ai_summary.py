@@ -34,7 +34,9 @@ def generate_stock_summary(asset_name: str, ticker: str, asset_type: str, strate
     """
     client = get_openai_client()
     if not client:
-        return "⚠️ OpenAI API key not found. Please set the `OPENAI_API_KEY` environment variable or Streamlit secret to enable AI Summaries."
+        import streamlit as st
+        st.warning("⚠️ OpenAI API key not found. Set the `OPENAI_API_KEY` environment variable or Streamlit secret to enable AI Summaries.")
+        return "AI summary unavailable: OpenAI API key not configured."
         
     # Extract the total score and a few key strategy drivers
     total_score = strategies.get("total_score", 0)
@@ -71,4 +73,6 @@ def generate_stock_summary(asset_name: str, ticker: str, asset_type: str, strate
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        return f"⚠️ Failed to generate AI summary: {str(e)}"
+        import streamlit as st
+        st.error(f"⚠️ Failed to generate AI summary: {str(e)}")
+        return f"AI summary unavailable due to error: {str(e)}"
