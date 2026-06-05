@@ -1,8 +1,10 @@
 import os
 import re
+from pathlib import Path
 
 def main():
-    base_dir = r"c:\Users\leyea\Documents\VibeCoding\Qwen\CombinedMarketAnalyzer"
+    # Use dynamic path relative to this script
+    base_dir = Path(__file__).parent
     
     replacements = [
         (r"\.fetch_stock_data\(", ".fetch_data("),
@@ -15,17 +17,18 @@ def main():
     
     for root, _, files in os.walk(base_dir):
         # Exclude hidden folders and cache
-        if any(part.startswith('.') for part in Path(root).parts):
+        root_path = Path(root)
+        if any(part.startswith('.') for part in root_path.parts):
             continue
             
         for file in files:
             if not file.endswith(".py"):
                 continue
             
-            filepath = os.path.join(root, file)
+            filepath = root_path / file
             with open(filepath, "r", encoding="utf-8") as f:
                 content = f.read()
-                
+            
             new_content = content
             for old_pattern, new_pattern in replacements:
                 new_content = re.sub(old_pattern, new_pattern, new_content)

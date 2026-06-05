@@ -54,6 +54,27 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# Rate Limiting Configuration Sidebar
+with st.sidebar:
+    st.header("⚙️ Configuration")
+    
+    # Rate limit delay slider (in seconds)
+    rate_limit_delay = st.slider(
+        "API Rate Limit Delay (seconds)",
+        min_value=0.5,
+        max_value=10.0,
+        value=2.0,
+        step=0.5,
+        help="Adjust the delay between API requests. Higher values are more conservative and less likely to hit rate limits, but slower. Lower values are faster but may trigger rate limiting."
+    )
+    
+    # Store in session state for fetchers to use
+    st.session_state.rate_limit_delay = rate_limit_delay
+    
+    st.info(f"Current delay: {rate_limit_delay}s between requests")
+    
+    st.divider()
+
 # Function to fetch global market indicators quickly
 @st.cache_data(ttl=300)  # cache for 5 minutes
 def fetch_market_overview():
@@ -78,10 +99,15 @@ def fetch_market_overview():
                     change = current - prev
                     pct_change = (change / prev) * 100
                     data[name] = {"price": current, "change": change, "pct_change": pct_change}
-            except Exception:
-                pass
+            except KeyError:
+                # Symbol not found in the downloaded data
+                st.warning(f"Market data for {name} ({symbol}) not available")
+            except Exception as e:
+                st.warning(f"Error processing {name} ({symbol}): {str(e)}")
+    except requests.exceptions.RequestException as e:
+        st.error(f"Network error fetching market overview: {str(e)}. Please check your internet connection.")
     except Exception as e:
-        print(f"Error fetching market overview: {e}")
+        st.error(f"Error fetching market overview: {str(e)}. This may be due to Yahoo Finance rate limits.")
         
     return data
 
@@ -99,8 +125,9 @@ if market_data:
                 delta=f"{metrics['change']:.2f} ({metrics['pct_change']:.2f}%)",
                 delta_color=delta_color
             )
-else:
-    st.info("Market data is currently unavailable. Please check your internet connection or Yahoo Finance limits.")
+elif not st.session_state.get("market_error_shown", False):
+    st.session_state.market_error_shown = True
+    st.warning("Market data is currently unavailable. This may be due to network issues or Yahoo Finance rate limits. Data will be cached for 5 minutes.")
     
 st.divider()
 

@@ -10,7 +10,7 @@ Before pushing to GitHub, you need to make sure you don't accidentally upload la
 
 1. Open your terminal and navigate to your project folder:
    ```bash
-   cd c:/Users/leyea/Documents/VibeCoding/Qwen/CombinedMarketAnalyzer
+   cd CombinedMarketAnalyzer
    ```
 
 2. Create a `.gitignore` file. I have already created one for you, or you can create it with the following content:

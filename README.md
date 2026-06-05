@@ -60,4 +60,31 @@ This project is fully structured to be deployed instantly on **Streamlit Communi
 See the detailed instructions in [DEPLOYMENT.md](DEPLOYMENT.md) for how to get your app live in under 2 minutes!
 
 ---
+
+## 💾 Caching & Performance
+
+The Combined Market Analyzer uses intelligent caching to minimize API calls and improve performance:
+
+### Cache Behavior
+- **24-hour cache**: All fetched data is cached for 24 hours in JSON format
+- **SQLite cache**: yfinance requests are cached in SQLite for 1 hour
+- **Global cache**: Data fetched in one module is instantly available in the watchlist
+- **Cache location**: `~/.qwen_combined_analyzer/cache/` (or temp directory in Streamlit Cloud)
+
+### Rate Limiting
+- **Configurable delay**: API requests have a configurable delay (default: 2 seconds)
+- **User-Agent rotation**: Automatically rotates user agents to avoid blocks
+- **Exponential backoff**: Increases delay after consecutive failures
+- **Cooling off**: 60-second pause after 15 consecutive failures
+
+### Configuration
+You can configure the rate limit delay in three ways:
+1. **Streamlit sidebar**: Use the slider in the main app (0.5s - 10s)
+2. **Environment variable**: Set `RATE_LIMIT_DELAY` (in seconds)
+3. **Session state**: Set `st.session_state.rate_limit_delay`
+
+Lower values = faster but more likely to hit rate limits
+Higher values = slower but more reliable
+
+---
 *Built using `streamlit`, `pandas`, and `yfinance`.*

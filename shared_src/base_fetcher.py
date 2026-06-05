@@ -21,6 +21,10 @@ else:
     
 CACHE_EXPIRY_HOURS = 24
 
+# Default rate limiting: 1 request per 2 seconds (very conservative)
+# Can be overridden via environment variable or Streamlit session state
+DEFAULT_RATE_LIMIT_DELAY = 2.0  # seconds
+
 USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
@@ -38,11 +42,18 @@ class BaseDataFetcher:
     Base class for fetching financial data with intelligent caching and rate limiting.
     """
 
-    def __init__(self, cache_filename: str):
-        """Initialize the fetcher and load existing cache from disk."""
+    def __init__(self, cache_filename: str, rate_limit_delay: Optional[float] = None):
+        """Initialize the fetcher and load existing cache from disk.
+        
+        Args:
+            cache_filename: Name of the JSON cache file
+            rate_limit_delay: Delay between requests in seconds. If None, uses
+                            DEFAULT_RATE_LIMIT_DELAY or environment variable.
+        """
         self.cache_file = CACHE_BASE_DIR / cache_filename
         self.cache: dict = {}
         self.last_error = None
+        self.rate_limit_delay = rate_limit_delay or self._get_rate_limit_delay()
         
         # Setup cache directory
         try:
@@ -52,13 +63,33 @@ class BaseDataFetcher:
 
         self.session = self._setup_session()
         self._load_cache()
+    
+    def _get_rate_limit_delay(self) -> float:
+        """Get the rate limit delay from environment or use default."""
+        # Check environment variable first
+        env_delay = os.environ.get("RATE_LIMIT_DELAY")
+        if env_delay:
+            try:
+                return float(env_delay)
+            except ValueError:
+                pass
+        
+        # Check Streamlit session state (if available)
+        try:
+            import streamlit as st
+            if hasattr(st, 'session_state') and 'rate_limit_delay' in st.session_state:
+                return float(st.session_state.rate_limit_delay)
+        except (ImportError, AttributeError):
+            pass
+        
+        return DEFAULT_RATE_LIMIT_DELAY
 
     def _setup_session(self):
         """Setup a robust requests session for yfinance."""
         sqlite_cache = CACHE_BASE_DIR / "yfinance_cache.sqlite"
         
-        # Rate limit: 1 request per 2 seconds to be very conservative
-        limiter = Limiter(RequestRate(1, Duration.SECOND * 2))
+        # Rate limit: configurable delay (default 2 seconds)
+        limiter = Limiter(RequestRate(1, Duration.SECOND * self.rate_limit_delay))
         
         session = CachedLimiterSession(
             limiter=limiter,

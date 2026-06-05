@@ -1,9 +1,11 @@
 import os
 import re
+from pathlib import Path
 
 def main():
-    base_dir = r"c:\Users\leyea\Documents\VibeCoding\Qwen\CombinedMarketAnalyzer"
-    pages_dir = os.path.join(base_dir, "pages")
+    # Use dynamic path relative to this script
+    base_dir = Path(__file__).parent
+    pages_dir = base_dir / "pages"
     
     # We want to replace the custom_tickers block
     old_block = r'''        custom_tickers = ""
@@ -35,8 +37,8 @@ def main():
     for file in os.listdir(pages_dir):
         if not file.endswith(".py") or "Watchlist" in file:
             continue
-            
-        filepath = os.path.join(pages_dir, file)
+        
+        filepath = pages_dir / file
         with open(filepath, "r", encoding="utf-8") as f:
             content = f.read()
             

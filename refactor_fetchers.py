@@ -1,8 +1,10 @@
 import os
 import re
+from pathlib import Path
 
 def main():
-    base_dir = r"c:\Users\leyea\Documents\VibeCoding\Qwen\CombinedMarketAnalyzer"
+    # Use dynamic path relative to this script
+    base_dir = Path(__file__).parent
     
     apps = [
         {"dir": "stock_src", "fetch_method": "fetch_stock_data", "cache_file": "stock_cache.json"},
@@ -12,8 +14,8 @@ def main():
     ]
     
     for app in apps:
-        filepath = os.path.join(base_dir, app["dir"], "data_fetcher.py")
-        if not os.path.exists(filepath):
+        filepath = base_dir / app["dir"] / "data_fetcher.py"
+        if not filepath.exists():
             continue
             
         with open(filepath, "r", encoding="utf-8") as f:
@@ -86,7 +88,7 @@ def main():
 
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(content)
-            
+        
         print(f"Refactored {filepath}")
 
 if __name__ == "__main__":
