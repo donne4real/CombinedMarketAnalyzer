@@ -5,6 +5,7 @@ from shared_src.watchlist_manager import WatchlistManager, AssetType
 from stock_src.data_fetcher import StockDataFetcher
 from etf_src.data_fetcher import ETFDataFetcher
 from mf_src.data_fetcher import MutualFundDataFetcher
+from bagger_src.data_fetcher import BaggerDataFetcher
 
 st.set_page_config(
     page_title="Portfolio Watchlist",
@@ -21,6 +22,8 @@ if "etf_fetcher" not in st.session_state:
     st.session_state.etf_fetcher = ETFDataFetcher()
 if "mf_fetcher" not in st.session_state:
     st.session_state.mf_fetcher = MutualFundDataFetcher()
+if "bagger_fetcher" not in st.session_state:
+    st.session_state.bagger_fetcher = BaggerDataFetcher()
 
 manager = st.session_state.watchlist_mgr
 

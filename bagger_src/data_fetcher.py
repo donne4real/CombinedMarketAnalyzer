@@ -29,7 +29,7 @@ from shared_src.base_fetcher import BaseDataFetcher, safe_get_numeric
 
 
 
-class StockDataFetcher(BaseDataFetcher):
+class BaggerDataFetcher(BaseDataFetcher):
     """
     Fetches stock data from Yahoo Finance with intelligent caching and rate limiting.
 

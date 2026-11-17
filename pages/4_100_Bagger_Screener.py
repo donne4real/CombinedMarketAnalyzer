@@ -25,7 +25,7 @@ import streamlit as st
 from shared_src.visuals import create_speedometer, create_radar_chart
 from shared_src.ai_summary import generate_stock_summary
 from bagger_src.data_fetcher import (
-    StockDataFetcher,
+    BaggerDataFetcher,
     get_small_cap_stocks,
     get_growth_stocks,
     get_peter_lynch_style_stocks,
@@ -75,7 +75,7 @@ def init_session_state():
     if "analysis_complete" not in st.session_state:
         st.session_state.analysis_complete = False
     if "fetcher" not in st.session_state:
-        st.session_state.fetcher = StockDataFetcher()
+        st.session_state.fetcher = BaggerDataFetcher()
 
 
 def analyze_stocks(stocks_data):

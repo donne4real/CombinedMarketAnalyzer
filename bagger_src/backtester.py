@@ -1,7 +1,7 @@
 """
-ETF Backtester Module
+Stock Backtester Module (100-Bagger Screener)
 
-Backtests ETF investment strategies on historical data with:
+Backtests stock investment strategies on historical data with:
 - Configurable date ranges
 - Rebalance frequencies
 - Position sizing
@@ -17,7 +17,7 @@ Example:
     >>> from bagger_src.backtester import Backtester, BacktestConfig
     >>> config = BacktestConfig(start_date="2023-01-01", end_date="2024-01-01")
     >>> backtester = Backtester(config)
-    >>> results = backtester.run_backtest(etf_tickers)
+    >>> results = backtester.run_backtest(stock_tickers)
 """
 
 import os
@@ -27,8 +27,8 @@ from typing import Optional
 
 import pandas as pd
 
-from bagger_src.data_fetcher import ETFDataFetcher
-from bagger_src.strategies import ETFStrategies
+from bagger_src.data_fetcher import BaggerDataFetcher
+from bagger_src.strategies import HundredBaggerStrategies
 
 
 @dataclass
@@ -116,7 +116,7 @@ class Backtester:
             config (BacktestConfig): Backtest configuration
         """
         self.config = config
-        self.fetcher = ETFDataFetcher()
+        self.fetcher = BaggerDataFetcher()
         self.trades: list[Trade] = []
         self.portfolio_values: list[dict] = []
 
@@ -153,9 +153,9 @@ class Backtester:
         return dates
 
     def _get_historical_price(self, ticker: str, date: datetime) -> Optional[float]:
-        """Get historical price for an ETF on a specific date."""
+        """Get historical price for a stock on a specific date."""
         try:
-            etf = ETFDataFetcher()
+            stock = BaggerDataFetcher()
             # Fetch with a date range around the target date
             yf_ticker = yf.Ticker(ticker)
             hist = yf_ticker.history(
@@ -170,12 +170,12 @@ class Backtester:
         return None
 
     def _calculate_strategy_scores(self, ticker: str, date: datetime) -> dict:
-        """Calculate strategy scores for an ETF at a point in time."""
+        """Calculate strategy scores for a stock at a point in time."""
         # For simplicity, use current data
         # In production, you'd fetch historical fundamentals
-        etf_data = self.fetcher.fetch_data(ticker)
-        if etf_data:
-            return ETFStrategies.analyze_etf(etf_data)
+        stock_data = self.fetcher.fetch_data(ticker)
+        if stock_data:
+            return HundredBaggerStrategies.analyze_stock(stock_data)
         return {}
 
     def _rebalance_portfolio(
