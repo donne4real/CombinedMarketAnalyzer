@@ -9,6 +9,7 @@ Features:
 
 import os
 import sys
+from datetime import datetime, timedelta
 
 # Ensure the root project directory is in the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,6 +19,7 @@ import streamlit as st
 
 from shared_src.visuals import create_speedometer, create_radar_chart
 from shared_src.ai_summary import generate_stock_summary
+from shared_src.analyst_ratings import AnalystRatings
 from stock_src.data_fetcher import StockDataFetcher, get_nasdaq_nyse_tickers, get_sp500_tickers
 from stock_src.strategies import InvestmentStrategies, STRATEGY_NAMES
 from stock_src.exporter import SpreadsheetExporter
@@ -499,7 +501,7 @@ def render_analysis_results():
                     result = strategies.get(strategy_key, {})
                     score = result.get("score", 0)
                     reason = result.get("reason", "")
-                    
+
                     score_emoji = ""
                     if score >= 8:
                         score_emoji = "🟢"
@@ -509,6 +511,92 @@ def render_analysis_results():
                         score_emoji = "🔴"
 
                     st.markdown(f"{score_emoji} **{strategy_name}**: {score}/10 - {reason}")
+
+            # --- Analyst Ratings ---
+            st.markdown("---")
+            st.markdown("### 📊 Analyst Ratings & Price Targets")
+
+            with st.spinner(f"Fetching analyst ratings for {stock.get('symbol', '')}..."):
+                analyst_fetcher = AnalystRatings()
+                analyst_data = analyst_fetcher.fetch_ratings(stock.get("symbol", ""))
+
+                if analyst_data and analyst_data.get("num_analysts", 0) > 0:
+                    # Consensus and Price Target Summary
+                    col1, col2, col3, col4 = st.columns(4)
+
+                    with col1:
+                        consensus = analyst_data.get("consensus", "N/A")
+                        consensus_emoji = "🟢" if consensus == "Buy" else "🟡" if consensus == "Hold" else "🔴"
+                        st.metric("Consensus", f"{consensus_emoji} {consensus}")
+
+                    with col2:
+                        num_analysts = analyst_data.get("num_analysts", 0)
+                        st.metric("Analysts", num_analysts)
+
+                    with col3:
+                        target_price = analyst_data.get("target_price")
+                        if target_price:
+                            st.metric("Price Target", f"${target_price:.2f}")
+                        else:
+                            st.metric("Price Target", "N/A")
+
+                    with col4:
+                        upside = analyst_data.get("upside_pct")
+                        if upside is not None:
+                            upside_delta = f"{upside:+.1f}%"
+                            st.metric("Upside Potential", upside_delta, delta=upside_delta if upside > 0 else None)
+                        else:
+                            st.metric("Upside Potential", "N/A")
+
+                    # Price Target Range
+                    target_high = analyst_data.get("target_high")
+                    target_low = analyst_data.get("target_low")
+                    current_price = analyst_data.get("current_price")
+
+                    if target_high and target_low and current_price:
+                        st.markdown("#### 📈 Price Target Range")
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Low Target", f"${target_low:.2f}")
+                        with col2:
+                            st.metric("Current Price", f"${current_price:.2f}")
+                        with col3:
+                            st.metric("High Target", f"${target_high:.2f}")
+
+                    # Recommendation Breakdown
+                    recommendations = analyst_data.get("recommendations", {})
+                    if recommendations and any(v > 0 for v in recommendations.values()):
+                        st.markdown("#### 📋 Recommendation Breakdown")
+                        rec_col1, rec_col2 = st.columns(2)
+
+                        with rec_col1:
+                            rec_df = pd.DataFrame({
+                                "Rating": list(recommendations.keys()),
+                                "Count": list(recommendations.values())
+                            })
+                            rec_df = rec_df[rec_df["Count"] > 0]
+                            if not rec_df.empty:
+                                st.bar_chart(rec_df.set_index("Rating"))
+
+                        with rec_col2:
+                            st.markdown("**Breakdown:**")
+                            for rating, count in recommendations.items():
+                                if count > 0:
+                                    st.markdown(f"- **{rating}**: {count}")
+
+                    # Recent Analyst Actions
+                    recent_actions = analyst_data.get("recent_actions", [])
+                    if recent_actions:
+                        with st.expander("📰 Recent Analyst Actions", expanded=False):
+                            actions_df = pd.DataFrame(recent_actions)
+                            if not actions_df.empty:
+                                st.dataframe(
+                                    actions_df,
+                                    use_container_width=True,
+                                    hide_index=True
+                                )
+                else:
+                    st.info("📊 No analyst ratings available for this stock.")
 
 
 def render_backtesting_page():
